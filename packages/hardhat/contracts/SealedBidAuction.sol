@@ -281,4 +281,27 @@ contract SealedBidAuction is IERC721Receiver {
 
         emit RefundClaimed(auctionId, msg.sender);
     }
+
+    // ============ Cancellation ============
+
+    /// @notice Cancel an auction (only seller, only if no bids)
+    /// @param auctionId The auction to cancel
+    function cancelAuction(uint256 auctionId) external {
+        Auction storage auction = auctions[auctionId];
+
+        if (msg.sender != auction.seller) revert NotSeller();
+        if (auction.status != Status.Active) revert AuctionNotActive();
+        if (auction.totalBids > 0) revert AuctionAlreadySettled();
+
+        auction.status = Status.Cancelled;
+
+        // Return NFT to seller
+        IERC721(auction.nftContract).safeTransferFrom(
+            address(this),
+            auction.seller,
+            auction.tokenId
+        );
+
+        emit AuctionCancelled(auctionId);
+    }
 }
