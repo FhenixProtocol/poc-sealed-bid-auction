@@ -107,4 +107,50 @@ contract SealedBidAuction is IERC721Receiver {
     ) external pure override returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
+
+    // ============ Auction Creation ============
+
+    /// @notice Create a new auction
+    /// @param nftContract The ERC721 contract address
+    /// @param tokenId The token ID to auction
+    /// @param fherc20Token The FHERC20 token for payments
+    /// @param startTime When bidding opens (unix timestamp)
+    /// @param endTime When bidding closes (unix timestamp)
+    /// @return auctionId The ID of the created auction
+    function createAuction(
+        address nftContract,
+        uint256 tokenId,
+        address fherc20Token,
+        uint256 startTime,
+        uint256 endTime
+    ) external returns (uint256 auctionId) {
+        if (endTime <= startTime) revert InvalidTimeRange();
+        if (startTime < block.timestamp) revert InvalidTimeRange();
+
+        // Transfer NFT to this contract
+        IERC721(nftContract).safeTransferFrom(msg.sender, address(this), tokenId);
+
+        auctionId = nextAuctionId++;
+
+        Auction storage auction = auctions[auctionId];
+        auction.seller = msg.sender;
+        auction.nftContract = nftContract;
+        auction.tokenId = tokenId;
+        auction.fherc20Token = fherc20Token;
+        auction.startTime = startTime;
+        auction.endTime = endTime;
+        auction.status = Status.Active;
+        auction.highestBid = FHE.asEuint64(0);
+        auction.highestBidder = FHE.asEaddress(address(0));
+
+        emit AuctionCreated(
+            auctionId,
+            msg.sender,
+            nftContract,
+            tokenId,
+            fherc20Token,
+            startTime,
+            endTime
+        );
+    }
 }
