@@ -304,4 +304,73 @@ contract SealedBidAuction is IERC721Receiver {
 
         emit AuctionCancelled(auctionId);
     }
+
+    // ============ View Functions ============
+
+    /// @notice Get auction details
+    /// @param auctionId The auction to query
+    /// @return seller The seller address
+    /// @return nftContract The NFT contract address
+    /// @return tokenId The token ID
+    /// @return fherc20Token The payment token address
+    /// @return startTime The auction start time
+    /// @return endTime The auction end time
+    /// @return status The auction status
+    /// @return totalBids The total number of bids
+    function getAuction(uint256 auctionId)
+        external
+        view
+        returns (
+            address seller,
+            address nftContract,
+            uint256 tokenId,
+            address fherc20Token,
+            uint256 startTime,
+            uint256 endTime,
+            Status status,
+            uint256 totalBids
+        )
+    {
+        Auction storage auction = auctions[auctionId];
+        return (
+            auction.seller,
+            auction.nftContract,
+            auction.tokenId,
+            auction.fherc20Token,
+            auction.startTime,
+            auction.endTime,
+            auction.status,
+            auction.totalBids
+        );
+    }
+
+    /// @notice Get settlement results (only available after settlement)
+    /// @param auctionId The auction to query
+    /// @return winner The winning bidder address
+    /// @return amount The winning bid amount
+    function getSettlementResult(uint256 auctionId)
+        external
+        view
+        returns (address winner, uint64 amount)
+    {
+        Auction storage auction = auctions[auctionId];
+        if (auction.status != Status.Settled) revert AuctionNotSettled();
+        return (auction.decryptedWinner, auction.decryptedAmount);
+    }
+
+    /// @notice Check if an address has bid on an auction
+    /// @param auctionId The auction to check
+    /// @param bidder The bidder address
+    /// @return True if the address has bid
+    function hasBidOnAuction(uint256 auctionId, address bidder) external view returns (bool) {
+        return hasBid[auctionId][bidder];
+    }
+
+    /// @notice Check if an address has claimed their refund
+    /// @param auctionId The auction to check
+    /// @param bidder The bidder address
+    /// @return True if the address has claimed their refund
+    function hasClaimedRefund(uint256 auctionId, address bidder) external view returns (bool) {
+        return hasRefunded[auctionId][bidder];
+    }
 }
