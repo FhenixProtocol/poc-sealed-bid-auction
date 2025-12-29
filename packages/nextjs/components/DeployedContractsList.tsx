@@ -1,0 +1,839 @@
+"use client";
+
+import {
+  useDeployedContractsStore,
+  DeployedContract,
+} from "@/services/store/deployedContractsStore";
+import { useAccount, useChains, useReadContract } from "wagmi";
+import {
+  FileText,
+  Trash2,
+  ExternalLink,
+  Shield,
+  ChevronDown,
+  Plus,
+  ArrowLeftRight,
+  Key,
+  Eye,
+  EyeOff,
+  Send,
+} from "lucide-react";
+import { useNavigationStore } from "@/services/store/navigationStore";
+import { useState, useEffect, useRef } from "react";
+import { PermitModal } from "./PermitModal";
+import { MintModal } from "./MintModal";
+import { ShieldUnshieldModal } from "./ShieldUnshieldModal";
+import { AddTokenModal } from "./AddTokenModal";
+import { usePermit } from "@/hooks/usePermit";
+import { abi } from "@/utils/contract";
+import { formatUnits } from "viem";
+import { cofhejs, FheTypes } from "cofhejs/web";
+import { useCofheStore } from "@/services/store/cofheStore";
+
+// Decryption Animation Component
+const DecryptingAnimation = ({ symbol }: { symbol: string }) => {
+  const baseText = "sh*elded";
+
+  const getRandomChar = () => {
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789*";
+    return chars[Math.floor(Math.random() * chars.length)];
+  };
+
+  // Use lazy initialization to avoid setState in effect
+  const [randomChars, setRandomChars] = useState<string[]>(() =>
+    baseText.split("")
+  );
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      const random = Array.from({ length: baseText.length }, () =>
+        getRandomChar()
+      );
+      setRandomChars(random);
+    }, 80);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="flex items-end gap-2">
+      <span className="text-2xl font-mono font-bold flex">
+        <span className="text-base-content/40">(</span>
+        {randomChars.map((char, index) => (
+          <span
+            key={index}
+            className={char === "*" ? "text-primary" : "text-base-content"}
+          >
+            {char}
+          </span>
+        ))}
+        <span className="text-base-content/40">)</span>
+      </span>
+      <span className="text-sm font-mono text-primary/60 mb-1">{symbol}</span>
+    </div>
+  );
+};
+
+// Shielded Balance Display Component
+const ShieldedBalanceDisplay = ({
+  contract,
+  ctHash,
+  onOpenPermitModal,
+}: {
+  contract: DeployedContract;
+  ctHash: bigint | undefined;
+  onOpenPermitModal: () => void;
+}) => {
+  const { hasValidPermit } = usePermit();
+  const { isInitialized } = useCofheStore();
+  const [isRevealing, setIsRevealing] = useState(false);
+  const [revealedBalance, setRevealedBalance] = useState<bigint | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastCtHash, setLastCtHash] = useState<bigint | undefined>(undefined);
+
+  // Reset revealed balance when ctHash changes (new balance after mint/shield/unshield)
+  useEffect(() => {
+    if (ctHash !== lastCtHash) {
+      setLastCtHash(ctHash);
+      setRevealedBalance(null);
+      setIsVisible(false);
+      setError(null);
+    }
+  }, [ctHash, lastCtHash]);
+
+  const handleToggleVisibility = async () => {
+    // If no permit, open the permit modal instead
+    if (!hasValidPermit) {
+      onOpenPermitModal();
+      return;
+    }
+
+    if (ctHash === undefined || !isInitialized) return;
+    console.log(ctHash);
+
+    // If already revealed, just toggle visibility
+    if (revealedBalance !== null) {
+      setIsVisible(!isVisible);
+      return;
+    }
+
+    // Otherwise, decrypt first
+    await handleReveal();
+  };
+
+  const handleReveal = async () => {
+    if (ctHash === undefined || !hasValidPermit || !isInitialized) {
+      console.log("handleReveal early return:", {
+        ctHash,
+        hasValidPermit,
+        isInitialized,
+      });
+      return;
+    }
+
+    // If ctHash is 0, no shielded balance exists yet
+    if (ctHash === BigInt(0)) {
+      console.log("ctHash is 0, setting balance to 0");
+      setRevealedBalance(BigInt(0));
+      setIsVisible(true);
+      return;
+    }
+
+    setIsRevealing(true);
+    setError(null);
+    try {
+      console.log("Calling cofhejs.unseal with ctHash:", ctHash.toString());
+      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
+      console.log("Unseal result:", result);
+
+      if (result?.success && result?.data !== undefined) {
+        setRevealedBalance(BigInt(result.data.toString()));
+        setIsVisible(true);
+      } else {
+        const errorMessage =
+          result?.error?.message || String(result?.error) || "";
+        console.error("Unseal failed:", errorMessage);
+
+        // Handle various error cases
+        if (
+          errorMessage.includes("sealed data not found") ||
+          errorMessage.includes("400 Bad Request") ||
+          errorMessage.includes("Failed to fetch full ciphertext")
+        ) {
+          // No shielded balance exists yet or ciphertext not available
+          setRevealedBalance(BigInt(0));
+          setIsVisible(true);
+        } else {
+          setError("Failed to decrypt");
+          console.error("Unseal failed:", result);
+        }
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.error("Unseal error:", err);
+
+      // Handle various error cases
+      if (
+        errorMessage.includes("sealed data not found") ||
+        errorMessage.includes("400 Bad Request") ||
+        errorMessage.includes("Failed to fetch full ciphertext")
+      ) {
+        // No shielded balance exists yet or ciphertext not available
+        setRevealedBalance(BigInt(0));
+        setIsVisible(true);
+      } else {
+        console.error("Failed to reveal balance:", err);
+        setError("Decryption error");
+      }
+    } finally {
+      setIsRevealing(false);
+    }
+  };
+
+  const formatBalance = (value: bigint) => {
+    // Confidential decimals are typically 6 for shielded tokens
+    const formatted = formatUnits(value, 6);
+    // Ensure we always show 2 decimal places minimum
+    const num = parseFloat(formatted);
+    return num.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6,
+    });
+  };
+  // Check if ctHash exists (0n is valid, undefined is not)
+  const hasCtHash = ctHash !== undefined;
+
+  return (
+    <div className="p-4 bg-base-100 rounded-sm border border-primary/30">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-pixel text-primary uppercase">
+          Shielded Balance
+        </p>
+        <button
+          onClick={handleToggleVisibility}
+          disabled={isRevealing || !hasCtHash}
+          className={`btn btn-ghost btn-xs ${
+            hasCtHash
+              ? "text-primary hover:bg-primary/10"
+              : "text-base-content/30 cursor-not-allowed"
+          }`}
+          title={!hasValidPermit ? "Click to generate permit" : undefined}
+        >
+          {isRevealing ? (
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          ) : isVisible && revealedBalance !== null ? (
+            <EyeOff className="w-4 h-4" />
+          ) : (
+            <Eye className="w-4 h-4" />
+          )}
+        </button>
+      </div>
+
+      {!hasCtHash ? (
+        <div className="flex items-end gap-2">
+          <span className="text-2xl font-mono font-bold text-base-content/40">
+            --
+          </span>
+          <span className="text-sm font-mono text-primary/60 mb-1">
+            {contract.symbol}
+          </span>
+        </div>
+      ) : revealedBalance !== null && isVisible ? (
+        <div className="flex items-end gap-2">
+          <span className="text-2xl font-mono font-bold text-primary">
+            {formatBalance(revealedBalance)}
+          </span>
+          <span className="text-sm font-mono text-primary/60 mb-1">
+            {contract.symbol}
+          </span>
+        </div>
+      ) : isRevealing ? (
+        <DecryptingAnimation symbol={contract.symbol} />
+      ) : error ? (
+        <div className="flex items-end gap-2">
+          <span className="text-sm font-mono text-red-500">{error}</span>
+        </div>
+      ) : (
+        <div className="flex items-end gap-2">
+          <span className="text-2xl font-mono font-bold flex">
+            <span className="text-base-content/40">(</span>
+            <span className="text-base-content">sh</span>
+            <span className="text-primary">*</span>
+            <span className="text-base-content">elded</span>
+            <span className="text-base-content/40">)</span>
+          </span>
+          <span className="text-sm font-mono text-primary/60 mb-1">
+            {contract.symbol}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Contract Card Component
+const ContractCard = ({
+  contract,
+  isExpanded,
+  onToggle,
+  onRemove,
+  chainName,
+  onOpenPermitModal,
+}: {
+  contract: DeployedContract;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+  chainName: string;
+  onOpenPermitModal: () => void;
+}) => {
+  const { address } = useAccount();
+  const [isMintModalOpen, setIsMintModalOpen] = useState(false);
+  const [isShieldModalOpen, setIsShieldModalOpen] = useState(false);
+  const { navigateToInteractWithToken } = useNavigationStore();
+
+  // Collapsed view shielded balance reveal state
+  const { hasValidPermit } = usePermit();
+  const { isInitialized } = useCofheStore();
+  const [isRevealingCollapsed, setIsRevealingCollapsed] = useState(false);
+  const [revealedBalanceCollapsed, setRevealedBalanceCollapsed] = useState<bigint | null>(null);
+  const [isVisibleCollapsed, setIsVisibleCollapsed] = useState(false);
+  const [lastCtHashCollapsed, setLastCtHashCollapsed] = useState<bigint | undefined>(undefined);
+
+  // Read public balance - always fetch to show in collapsed view
+  const { data: publicBalance, refetch: refetchPublicBalance } =
+    useReadContract({
+      address: contract.address as `0x${string}`,
+      abi,
+      functionName: "balanceOf",
+      args: address ? [address] : undefined,
+      query: {
+        enabled: !!address,
+      },
+    });
+
+  // Read confidential balance (ctHash) - always fetch to show in collapsed view
+  const { data: confidentialBalance, refetch: refetchConfidentialBalance } =
+    useReadContract({
+      address: contract.address as `0x${string}`,
+      abi,
+      functionName: "confidentialBalanceOf",
+      args: address ? [address] : undefined,
+      query: {
+        enabled: !!address,
+      },
+    });
+
+  // Refetch balances after successful mint
+  const handleMintSuccess = () => {
+    refetchPublicBalance();
+    refetchConfidentialBalance();
+  };
+
+  const formatPublicBalance = (balance: bigint | undefined) => {
+    if (!balance) return "0.00";
+    return formatUnits(balance, contract.decimals);
+  };
+
+  // Format shielded balance (uses 6 decimals for confidential)
+  const formatShieldedBalance = (value: bigint) => {
+    const formatted = formatUnits(value, 6);
+    const num = parseFloat(formatted);
+    return num.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 6,
+    });
+  };
+
+  // Reset revealed balance when ctHash changes
+  useEffect(() => {
+    const ctHash = confidentialBalance as bigint | undefined;
+    if (ctHash !== lastCtHashCollapsed) {
+      setLastCtHashCollapsed(ctHash);
+      setRevealedBalanceCollapsed(null);
+      setIsVisibleCollapsed(false);
+    }
+  }, [confidentialBalance, lastCtHashCollapsed]);
+
+  // Handle reveal click in collapsed view
+  const handleRevealCollapsed = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card expansion
+
+    const ctHash = confidentialBalance as bigint | undefined;
+
+    // If no permit, open the permit modal
+    if (!hasValidPermit) {
+      onOpenPermitModal();
+      return;
+    }
+
+    if (ctHash === undefined || !isInitialized) return;
+
+    // If already revealed, just toggle visibility
+    if (revealedBalanceCollapsed !== null) {
+      setIsVisibleCollapsed(!isVisibleCollapsed);
+      return;
+    }
+
+    // If ctHash is 0, no shielded balance exists yet
+    if (ctHash === BigInt(0)) {
+      setRevealedBalanceCollapsed(BigInt(0));
+      setIsVisibleCollapsed(true);
+      return;
+    }
+
+    setIsRevealingCollapsed(true);
+    try {
+      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
+      if (result?.success && result?.data !== undefined) {
+        setRevealedBalanceCollapsed(BigInt(result.data.toString()));
+        setIsVisibleCollapsed(true);
+      } else {
+        const errorMessage = result?.error?.message || String(result?.error) || "";
+        if (
+          errorMessage.includes("sealed data not found") ||
+          errorMessage.includes("400 Bad Request") ||
+          errorMessage.includes("Failed to fetch full ciphertext")
+        ) {
+          setRevealedBalanceCollapsed(BigInt(0));
+          setIsVisibleCollapsed(true);
+        }
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (
+        errorMessage.includes("sealed data not found") ||
+        errorMessage.includes("400 Bad Request") ||
+        errorMessage.includes("Failed to fetch full ciphertext")
+      ) {
+        setRevealedBalanceCollapsed(BigInt(0));
+        setIsVisibleCollapsed(true);
+      }
+    } finally {
+      setIsRevealingCollapsed(false);
+    }
+  };
+
+  return (
+    <div
+      className={`bg-base-100 border rounded-sm transition-all overflow-hidden ${
+        isExpanded
+          ? "border-primary shadow-lg"
+          : "border-base-300 hover:border-primary/50"
+      }`}
+    >
+      {/* Card Header - Clickable */}
+      <div className="p-6 cursor-pointer" onClick={onToggle}>
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex-1 space-y-3">
+            {/* Token Name & Shield Badge */}
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl text-base-content font-bold font-display">
+                {contract.name}{" "}
+                <span className="text-base-content/60">
+                  ({contract.symbol})
+                </span>
+              </h3>
+              {contract.isShielded && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary rounded-sm">
+                  <Shield className="w-5 h-5 text-primary" />
+                  <span className="text-sm font-bold font-display text-primary uppercase tracking-wide">
+                    Shielded
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Contract Details */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-pixel text-base-content/50 uppercase tracking-widest">
+                  Address:
+                </span>
+                <span className="text-sm font-mono text-base-content">
+                  {contract.address}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-6 text-sm text-base-content/60">
+                <span className="flex items-center gap-1">
+                  <span className="text-sm font-pixel text-base-content/40 uppercase">
+                    Decimals:
+                  </span>{" "}
+                  {contract.decimals}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-sm font-pixel text-base-content/40 uppercase">
+                    Chain:
+                  </span>{" "}
+                  {chainName}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="text-sm font-pixel text-base-content/40 uppercase">
+                    Deployed:
+                  </span>{" "}
+                  {new Date(contract.deployedAt).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Compact Balances Display - visible when collapsed */}
+          <div className="flex items-center gap-8">
+            {!isExpanded && (
+              <div className="flex items-center gap-8 text-right">
+                {/* Public Balance */}
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-pixel text-base-content/50 uppercase">
+                    Public
+                  </span>
+                  <span className="text-xl font-mono font-bold text-base-content">
+                    {formatPublicBalance(publicBalance as bigint | undefined)}{" "}
+                    <span className="text-base-content/60">{contract.symbol}</span>
+                  </span>
+                </div>
+
+                {/* Shielded Balance - clickable to reveal */}
+                {contract.isShielded && (
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-pixel text-primary/70 uppercase">
+                      Shielded
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isRevealingCollapsed ? (
+                        <>
+                          <span className="text-xl font-mono font-bold text-primary animate-pulse">
+                            Decrypting...
+                          </span>
+                          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        </>
+                      ) : revealedBalanceCollapsed !== null && isVisibleCollapsed ? (
+                        <>
+                          <span className="text-xl font-mono font-bold text-primary">
+                            {formatShieldedBalance(revealedBalanceCollapsed)}{" "}
+                            <span className="text-primary/60">{contract.symbol}</span>
+                          </span>
+                          <button
+                            onClick={handleRevealCollapsed}
+                            className="p-1 hover:bg-primary/10 rounded transition-colors"
+                            title="Hide balance"
+                          >
+                            <EyeOff className="w-5 h-5 text-primary" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-xl font-mono font-bold text-primary">
+                            <span className="text-base-content/40">(</span>
+                            sh<span className="text-primary">*</span>elded
+                            <span className="text-base-content/40">)</span>
+                          </span>
+                          <button
+                            onClick={handleRevealCollapsed}
+                            className="p-1 hover:bg-primary/10 rounded transition-colors"
+                            title={hasValidPermit ? "Reveal balance" : "Generate permit first"}
+                          >
+                            <Eye className="w-5 h-5 text-primary" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div
+              className={`transition-transform duration-200 ${
+                isExpanded ? "rotate-180" : ""
+              }`}
+            >
+              <ChevronDown className="w-6 h-6 text-base-content/40" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="p-6 border-t border-base-300 bg-base-200/50">
+          {/* Balances */}
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            {/* Public Balance */}
+            <div className="p-4 bg-base-100 rounded-sm border border-base-300">
+              <p className="text-xs font-pixel text-base-content/40 uppercase mb-2">
+                Public Balance
+              </p>
+              <div className="flex items-end gap-2">
+                <span className="text-2xl font-mono font-bold text-base-content">
+                  {formatPublicBalance(publicBalance as bigint | undefined)}
+                </span>
+                <span className="text-sm font-mono text-base-content/60 mb-1">
+                  {contract.symbol}
+                </span>
+              </div>
+            </div>
+
+            {/* Shielded Balance */}
+            <ShieldedBalanceDisplay
+              contract={contract}
+              ctHash={confidentialBalance as bigint | undefined}
+              onOpenPermitModal={onOpenPermitModal}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMintModalOpen(true);
+              }}
+              className="btn btn-fhenix h-12 font-display uppercase tracking-wide text-sm"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Mint Tokens
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsShieldModalOpen(true);
+              }}
+              disabled={!contract.isShielded}
+              className={`btn btn-fhenix h-12 font-display uppercase tracking-wide text-sm ${
+                !contract.isShielded ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <ArrowLeftRight className="w-5 h-5 mr-2" />
+              Shield / Unshield
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigateToInteractWithToken(contract.address);
+              }}
+              className="btn btn-fhenix h-12 font-display uppercase tracking-wide text-sm"
+            >
+              <Send className="w-5 h-5 mr-2" />
+              Use This Token
+            </button>
+          </div>
+
+          {/* Mint Modal */}
+          <MintModal
+            isOpen={isMintModalOpen}
+            onClose={() => setIsMintModalOpen(false)}
+            contract={contract}
+            onSuccess={handleMintSuccess}
+          />
+
+          {/* Shield/Unshield Modal */}
+          <ShieldUnshieldModal
+            isOpen={isShieldModalOpen}
+            onClose={() => setIsShieldModalOpen(false)}
+            contract={contract}
+            publicBalance={publicBalance as bigint | undefined}
+            onSuccess={handleMintSuccess}
+          />
+
+          {/* External Actions */}
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-base-300/50">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(
+                  `https://etherscan.io/address/${contract.address}`,
+                  "_blank"
+                );
+              }}
+              className="btn btn-ghost btn-sm text-base-content/60 hover:text-primary hover:bg-primary/10"
+            >
+              <ExternalLink className="w-4 h-4 mr-1" />
+              Explorer
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (
+                  confirm(
+                    `Are you sure you want to remove ${contract.name} from your list?`
+                  )
+                ) {
+                  onRemove();
+                }
+              }}
+              className="btn btn-ghost btn-sm text-base-content/60 hover:text-red-500 hover:bg-red-500/10"
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const DeployedContractsList = () => {
+  const { address } = useAccount();
+  const chains = useChains();
+  const { getAllContracts, removeContract } = useDeployedContractsStore();
+  const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
+  const [isPermitModalOpen, setIsPermitModalOpen] = useState(false);
+  const [isAddTokenModalOpen, setIsAddTokenModalOpen] = useState(false);
+  const { hasValidPermit } = usePermit();
+
+  // Helper to get chain name from ID
+  const getChainName = (chainId: number) => {
+    const chain = chains.find((c) => c.id === chainId);
+    return chain?.name || `Chain ${chainId}`;
+  };
+
+  const toggleExpand = (contractAddress: string) => {
+    setExpandedAddress(
+      expandedAddress === contractAddress ? null : contractAddress
+    );
+  };
+
+  if (!address) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <FileText className="w-6 h-6 text-primary" />
+            <h2 className="text-xl font-bold text-base-content uppercase tracking-wider font-display">
+              Your Deployed Tokens
+            </h2>
+          </div>
+        </div>
+        <div className="p-8 bg-base-100 border border-base-300 rounded-sm">
+          <p className="text-center text-base-content/60 text-base">
+            Connect your wallet to see deployed contracts
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const allContracts = getAllContracts();
+
+  if (allContracts.length === 0) {
+    return (
+      <div className="space-y-6">
+        {/* Header with Permit Button */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <FileText className="w-6 h-6 text-primary" />
+            <h2 className="text-xl font-bold text-base-content uppercase tracking-wider font-display">
+              Your Tokens (0)
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAddTokenModalOpen(true)}
+              className="btn btn-sm btn-outline btn-primary"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Token
+            </button>
+            <button
+              onClick={() => setIsPermitModalOpen(true)}
+              className={`btn btn-sm ${hasValidPermit ? "btn-outline btn-primary" : "btn-fhenix"}`}
+            >
+              <Key className="w-4 h-4 mr-2" />
+              {hasValidPermit ? "Permit Active" : "Generate Permit"}
+            </button>
+          </div>
+        </div>
+
+        <div className="p-8 bg-base-100 border border-base-300 rounded-sm text-center">
+          <p className="text-base-content/60 text-base mb-4">
+            No tokens yet. Deploy a new token or add an existing one.
+          </p>
+          <button
+            onClick={() => setIsAddTokenModalOpen(true)}
+            className="btn btn-fhenix"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Existing Token
+          </button>
+        </div>
+
+        <PermitModal
+          isOpen={isPermitModalOpen}
+          onClose={() => setIsPermitModalOpen(false)}
+        />
+
+        <AddTokenModal
+          isOpen={isAddTokenModalOpen}
+          onClose={() => setIsAddTokenModalOpen(false)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Permit Button */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FileText className="w-6 h-6 text-primary" />
+          <h2 className="text-xl font-bold text-base-content uppercase tracking-wider font-display">
+            Your Tokens ({allContracts.length})
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAddTokenModalOpen(true)}
+            className="btn btn-sm btn-outline btn-primary"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Token
+          </button>
+          <button
+            onClick={() => setIsPermitModalOpen(true)}
+            className={`btn btn-sm ${hasValidPermit ? "btn-outline btn-primary" : "btn-fhenix"}`}
+          >
+            <Key className="w-4 h-4 mr-2" />
+            {hasValidPermit ? "Permit Active" : "Generate Permit"}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {allContracts.map((contract) => (
+          <ContractCard
+            key={contract.address}
+            contract={contract}
+            isExpanded={expandedAddress === contract.address}
+            onToggle={() => toggleExpand(contract.address)}
+            onRemove={() => removeContract(contract.address)}
+            chainName={getChainName(contract.chainId)}
+            onOpenPermitModal={() => setIsPermitModalOpen(true)}
+          />
+        ))}
+      </div>
+
+      <div className="text-xs font-pixel text-base-content/60 text-center mt-6">
+        {"// "}Contracts are stored locally in your browser
+      </div>
+
+      <PermitModal
+        isOpen={isPermitModalOpen}
+        onClose={() => setIsPermitModalOpen(false)}
+      />
+
+      <AddTokenModal
+        isOpen={isAddTokenModalOpen}
+        onClose={() => setIsAddTokenModalOpen(false)}
+      />
+    </div>
+  );
+};
