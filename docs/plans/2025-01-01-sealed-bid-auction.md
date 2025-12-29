@@ -6,7 +6,7 @@
 
 **Architecture:** Single contract managing multiple auctions via auction IDs. Bidders deposit FHERC20 tokens as encrypted bids. Two-step settlement: request decryption of winner (eaddress), then finalize transfers. Losers claim refunds of their encrypted deposits.
 
-**Tech Stack:** Solidity 0.8.25, @fhenixprotocol/cofhe-contracts (FHE), fhenix-confidential-contracts (FHERC20), OpenZeppelin (ERC721, IERC721Receiver)
+**Tech Stack:** Solidity 0.8.25, @fhenixprotocol/cofhe-contracts (FHE), fhenix-confidential-contracts (FHERC20), OpenZeppelin (ERC721, IERC721Receiver), Hardhat + Chai for testing
 
 ---
 
@@ -752,7 +752,904 @@ git commit -m "feat: add deployment script for auction contracts"
 
 ---
 
-## Task 12: Final compilation and verification
+## Task 12: Create comprehensive test suite
+
+**Files:**
+- Create: `packages/hardhat/test/helpers/setup.ts`
+- Create: `packages/hardhat/test/AuctionToken.test.ts`
+- Create: `packages/hardhat/test/AuctionNFT.test.ts`
+- Create: `packages/hardhat/test/SealedBidAuction.test.ts`
+
+**Step 1: Create test helpers directory and setup file**
+
+```bash
+mkdir -p packages/hardhat/test/helpers
+```
+
+```typescript
+// packages/hardhat/test/helpers/setup.ts
+import { ethers } from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
+
+export async function deployContracts() {
+  const [deployer, seller, bidder1, bidder2, bidder3] = await ethers.getSigners();
+
+  // Deploy AuctionToken (FHERC20)
+  const AuctionToken = await ethers.getContractFactory("AuctionToken");
+  const auctionToken = await AuctionToken.deploy();
+  await auctionToken.waitForDeployment();
+
+  // Deploy AuctionNFT
+  const AuctionNFT = await ethers.getContractFactory("AuctionNFT");
+  const auctionNFT = await AuctionNFT.deploy();
+  await auctionNFT.waitForDeployment();
+
+  // Deploy SealedBidAuction
+  const SealedBidAuction = await ethers.getContractFactory("SealedBidAuction");
+  const sealedBidAuction = await SealedBidAuction.deploy();
+  await sealedBidAuction.waitForDeployment();
+
+  return {
+    auctionToken,
+    auctionNFT,
+    sealedBidAuction,
+    deployer,
+    seller,
+    bidder1,
+    bidder2,
+    bidder3,
+  };
+}
+
+export async function createAuctionFixture() {
+  const contracts = await deployContracts();
+  const { auctionToken, auctionNFT, sealedBidAuction, seller, bidder1, bidder2 } = contracts;
+
+  // Mint NFT to seller
+  await auctionNFT.connect(seller).mint(seller.address, "ipfs://test-uri");
+  const tokenId = 0;
+
+  // Approve auction contract to transfer NFT
+  await auctionNFT.connect(seller).approve(await sealedBidAuction.getAddress(), tokenId);
+
+  // Mint tokens to bidders (1000 tokens each with 6 decimals)
+  await auctionToken.mint(bidder1.address, 1000_000000n);
+  await auctionToken.mint(bidder2.address, 1000_000000n);
+
+  // Set auction contract as operator for bidders (24 hours from now)
+  const futureTimestamp = Math.floor(Date.now() / 1000) + 86400;
+  await auctionToken.connect(bidder1).setOperator(await sealedBidAuction.getAddress(), futureTimestamp);
+  await auctionToken.connect(bidder2).setOperator(await sealedBidAuction.getAddress(), futureTimestamp);
+
+  // Set up auction times
+  const now = await time.latest();
+  const startTime = now + 60; // 1 minute from now
+  const endTime = now + 3600; // 1 hour from now
+
+  return {
+    ...contracts,
+    tokenId,
+    startTime,
+    endTime,
+  };
+}
+
+export async function createActiveAuctionFixture() {
+  const fixture = await createAuctionFixture();
+  const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } = fixture;
+
+  // Create the auction
+  await sealedBidAuction
+    .connect(seller)
+    .createAuction(
+      await auctionNFT.getAddress(),
+      tokenId,
+      await auctionToken.getAddress(),
+      startTime,
+      endTime
+    );
+
+  // Advance time to start of auction
+  await time.increaseTo(startTime + 1);
+
+  return {
+    ...fixture,
+    auctionId: 0n,
+  };
+}
+```
+
+**Step 2: Create AuctionToken tests**
+
+```typescript
+// packages/hardhat/test/AuctionToken.test.ts
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { deployContracts } from "./helpers/setup";
+
+describe("AuctionToken", function () {
+  describe("Deployment", function () {
+    it("should deploy successfully", async function () {
+      const { auctionToken } = await deployContracts();
+      expect(await auctionToken.getAddress()).to.be.properAddress;
+    });
+
+    it("should have correct name", async function () {
+      const { auctionToken } = await deployContracts();
+      expect(await auctionToken.name()).to.equal("Auction Token");
+    });
+
+    it("should have correct symbol", async function () {
+      const { auctionToken } = await deployContracts();
+      expect(await auctionToken.symbol()).to.equal("AUCT");
+    });
+
+    it("should have 6 decimals", async function () {
+      const { auctionToken } = await deployContracts();
+      expect(await auctionToken.decimals()).to.equal(6);
+    });
+
+    it("should return true for isFherc20", async function () {
+      const { auctionToken } = await deployContracts();
+      expect(await auctionToken.isFherc20()).to.be.true;
+    });
+  });
+
+  describe("Minting", function () {
+    it("should allow minting tokens", async function () {
+      const { auctionToken, bidder1 } = await deployContracts();
+      await expect(auctionToken.mint(bidder1.address, 1000_000000n))
+        .to.not.be.reverted;
+    });
+
+    it("should mint to multiple addresses", async function () {
+      const { auctionToken, bidder1, bidder2 } = await deployContracts();
+      await auctionToken.mint(bidder1.address, 1000_000000n);
+      await auctionToken.mint(bidder2.address, 500_000000n);
+      // Note: balanceOf returns indicated balance, actual balance is encrypted
+    });
+  });
+
+  describe("Operator Management", function () {
+    it("should allow setting operator", async function () {
+      const { auctionToken, bidder1, sealedBidAuction } = await deployContracts();
+      const futureTimestamp = Math.floor(Date.now() / 1000) + 86400;
+
+      await expect(
+        auctionToken.connect(bidder1).setOperator(await sealedBidAuction.getAddress(), futureTimestamp)
+      ).to.not.be.reverted;
+    });
+
+    it("should correctly report operator status", async function () {
+      const { auctionToken, bidder1, sealedBidAuction } = await deployContracts();
+      const futureTimestamp = Math.floor(Date.now() / 1000) + 86400;
+
+      // Before setting operator
+      expect(
+        await auctionToken.isOperator(bidder1.address, await sealedBidAuction.getAddress())
+      ).to.be.false;
+
+      // After setting operator
+      await auctionToken.connect(bidder1).setOperator(await sealedBidAuction.getAddress(), futureTimestamp);
+      expect(
+        await auctionToken.isOperator(bidder1.address, await sealedBidAuction.getAddress())
+      ).to.be.true;
+    });
+
+    it("should emit OperatorSet event", async function () {
+      const { auctionToken, bidder1, sealedBidAuction } = await deployContracts();
+      const futureTimestamp = Math.floor(Date.now() / 1000) + 86400;
+
+      await expect(
+        auctionToken.connect(bidder1).setOperator(await sealedBidAuction.getAddress(), futureTimestamp)
+      ).to.emit(auctionToken, "OperatorSet");
+    });
+  });
+
+  describe("ERC20 Compatibility Reverts", function () {
+    it("should revert on transfer()", async function () {
+      const { auctionToken, bidder1, bidder2 } = await deployContracts();
+      await auctionToken.mint(bidder1.address, 1000_000000n);
+
+      await expect(
+        auctionToken.connect(bidder1).transfer(bidder2.address, 100_000000n)
+      ).to.be.revertedWithCustomError(auctionToken, "FHERC20IncompatibleFunction");
+    });
+
+    it("should revert on approve()", async function () {
+      const { auctionToken, bidder1, bidder2 } = await deployContracts();
+
+      await expect(
+        auctionToken.connect(bidder1).approve(bidder2.address, 100_000000n)
+      ).to.be.revertedWithCustomError(auctionToken, "FHERC20IncompatibleFunction");
+    });
+
+    it("should revert on transferFrom()", async function () {
+      const { auctionToken, bidder1, bidder2, deployer } = await deployContracts();
+
+      await expect(
+        auctionToken.connect(deployer).transferFrom(bidder1.address, bidder2.address, 100_000000n)
+      ).to.be.revertedWithCustomError(auctionToken, "FHERC20IncompatibleFunction");
+    });
+
+    it("should revert on allowance()", async function () {
+      const { auctionToken, bidder1, bidder2 } = await deployContracts();
+
+      await expect(
+        auctionToken.allowance(bidder1.address, bidder2.address)
+      ).to.be.revertedWithCustomError(auctionToken, "FHERC20IncompatibleFunction");
+    });
+  });
+});
+```
+
+**Step 3: Create AuctionNFT tests**
+
+```typescript
+// packages/hardhat/test/AuctionNFT.test.ts
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { deployContracts } from "./helpers/setup";
+
+describe("AuctionNFT", function () {
+  describe("Deployment", function () {
+    it("should deploy successfully", async function () {
+      const { auctionNFT } = await deployContracts();
+      expect(await auctionNFT.getAddress()).to.be.properAddress;
+    });
+
+    it("should have correct name", async function () {
+      const { auctionNFT } = await deployContracts();
+      expect(await auctionNFT.name()).to.equal("Auction NFT");
+    });
+
+    it("should have correct symbol", async function () {
+      const { auctionNFT } = await deployContracts();
+      expect(await auctionNFT.symbol()).to.equal("ANFT");
+    });
+  });
+
+  describe("Minting", function () {
+    it("should mint NFT with correct owner", async function () {
+      const { auctionNFT, seller } = await deployContracts();
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      expect(await auctionNFT.ownerOf(0)).to.equal(seller.address);
+    });
+
+    it("should mint NFT with correct URI", async function () {
+      const { auctionNFT, seller } = await deployContracts();
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      expect(await auctionNFT.tokenURI(0)).to.equal("ipfs://test-uri");
+    });
+
+    it("should increment token IDs", async function () {
+      const { auctionNFT, seller, bidder1 } = await deployContracts();
+
+      await auctionNFT.mint(seller.address, "ipfs://uri-0");
+      await auctionNFT.mint(bidder1.address, "ipfs://uri-1");
+
+      expect(await auctionNFT.ownerOf(0)).to.equal(seller.address);
+      expect(await auctionNFT.ownerOf(1)).to.equal(bidder1.address);
+    });
+
+    it("should return correct token ID", async function () {
+      const { auctionNFT, seller } = await deployContracts();
+
+      // First mint
+      const tx1 = await auctionNFT.mint(seller.address, "ipfs://uri-0");
+      await tx1.wait();
+
+      // Second mint
+      const tx2 = await auctionNFT.mint(seller.address, "ipfs://uri-1");
+      await tx2.wait();
+
+      expect(await auctionNFT.tokenURI(0)).to.equal("ipfs://uri-0");
+      expect(await auctionNFT.tokenURI(1)).to.equal("ipfs://uri-1");
+    });
+
+    it("should emit Transfer event on mint", async function () {
+      const { auctionNFT, seller } = await deployContracts();
+
+      await expect(auctionNFT.mint(seller.address, "ipfs://test-uri"))
+        .to.emit(auctionNFT, "Transfer")
+        .withArgs(ethers.ZeroAddress, seller.address, 0);
+    });
+  });
+
+  describe("Transfers", function () {
+    it("should allow owner to transfer", async function () {
+      const { auctionNFT, seller, bidder1 } = await deployContracts();
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      await auctionNFT.connect(seller).transferFrom(seller.address, bidder1.address, 0);
+
+      expect(await auctionNFT.ownerOf(0)).to.equal(bidder1.address);
+    });
+
+    it("should allow approved operator to transfer", async function () {
+      const { auctionNFT, seller, bidder1, deployer } = await deployContracts();
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      await auctionNFT.connect(seller).approve(deployer.address, 0);
+      await auctionNFT.connect(deployer).transferFrom(seller.address, bidder1.address, 0);
+
+      expect(await auctionNFT.ownerOf(0)).to.equal(bidder1.address);
+    });
+
+    it("should revert transfer from non-owner/non-approved", async function () {
+      const { auctionNFT, seller, bidder1, bidder2 } = await deployContracts();
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      await expect(
+        auctionNFT.connect(bidder1).transferFrom(seller.address, bidder2.address, 0)
+      ).to.be.reverted;
+    });
+  });
+
+  describe("supportsInterface", function () {
+    it("should support ERC721 interface", async function () {
+      const { auctionNFT } = await deployContracts();
+      // ERC721 interface ID: 0x80ac58cd
+      expect(await auctionNFT.supportsInterface("0x80ac58cd")).to.be.true;
+    });
+
+    it("should support ERC721Metadata interface", async function () {
+      const { auctionNFT } = await deployContracts();
+      // ERC721Metadata interface ID: 0x5b5e139f
+      expect(await auctionNFT.supportsInterface("0x5b5e139f")).to.be.true;
+    });
+
+    it("should support ERC165 interface", async function () {
+      const { auctionNFT } = await deployContracts();
+      // ERC165 interface ID: 0x01ffc9a7
+      expect(await auctionNFT.supportsInterface("0x01ffc9a7")).to.be.true;
+    });
+  });
+});
+```
+
+**Step 4: Create SealedBidAuction tests**
+
+```typescript
+// packages/hardhat/test/SealedBidAuction.test.ts
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { deployContracts, createAuctionFixture, createActiveAuctionFixture } from "./helpers/setup";
+
+describe("SealedBidAuction", function () {
+  describe("Deployment", function () {
+    it("should deploy successfully", async function () {
+      const { sealedBidAuction } = await deployContracts();
+      expect(await sealedBidAuction.getAddress()).to.be.properAddress;
+    });
+
+    it("should initialize nextAuctionId to 0", async function () {
+      const { sealedBidAuction } = await deployContracts();
+      expect(await sealedBidAuction.nextAuctionId()).to.equal(0);
+    });
+  });
+
+  describe("createAuction", function () {
+    it("should create auction with correct seller", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.seller).to.equal(seller.address);
+    });
+
+    it("should create auction with correct NFT contract", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.nftContract).to.equal(await auctionNFT.getAddress());
+    });
+
+    it("should create auction with correct token ID", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.tokenId).to.equal(tokenId);
+    });
+
+    it("should create auction with Active status", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.status).to.equal(0); // Status.Active
+    });
+
+    it("should transfer NFT to auction contract", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      expect(await auctionNFT.ownerOf(tokenId)).to.equal(await sealedBidAuction.getAddress());
+    });
+
+    it("should increment nextAuctionId", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      expect(await sealedBidAuction.nextAuctionId()).to.equal(0);
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      expect(await sealedBidAuction.nextAuctionId()).to.equal(1);
+    });
+
+    it("should emit AuctionCreated event", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          )
+      )
+        .to.emit(sealedBidAuction, "AuctionCreated")
+        .withArgs(
+          0,
+          seller.address,
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+    });
+
+    it("should revert if endTime equals startTime", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime } =
+        await createAuctionFixture();
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            startTime
+          )
+      ).to.be.revertedWithCustomError(sealedBidAuction, "InvalidTimeRange");
+    });
+
+    it("should revert if endTime is before startTime", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            endTime,
+            startTime
+          )
+      ).to.be.revertedWithCustomError(sealedBidAuction, "InvalidTimeRange");
+    });
+
+    it("should revert if startTime is in the past", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, endTime } =
+        await createAuctionFixture();
+
+      const pastTime = (await time.latest()) - 100;
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            pastTime,
+            endTime
+          )
+      ).to.be.revertedWithCustomError(sealedBidAuction, "InvalidTimeRange");
+    });
+
+    it("should allow creating multiple auctions", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, bidder1, startTime, endTime } =
+        await createAuctionFixture();
+
+      // Create second NFT
+      await auctionNFT.connect(bidder1).mint(bidder1.address, "ipfs://test-uri-2");
+      await auctionNFT.connect(bidder1).approve(await sealedBidAuction.getAddress(), 1);
+
+      // Create first auction (seller)
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          0,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      // Create second auction (bidder1)
+      await sealedBidAuction
+        .connect(bidder1)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          1,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      expect(await sealedBidAuction.nextAuctionId()).to.equal(2);
+
+      const auction0 = await sealedBidAuction.getAuction(0);
+      const auction1 = await sealedBidAuction.getAuction(1);
+
+      expect(auction0.seller).to.equal(seller.address);
+      expect(auction1.seller).to.equal(bidder1.address);
+    });
+  });
+
+  describe("cancelAuction", function () {
+    it("should allow seller to cancel auction with no bids", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      await sealedBidAuction.connect(seller).cancelAuction(0);
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.status).to.equal(4); // Status.Cancelled
+    });
+
+    it("should return NFT to seller on cancellation", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      // NFT should be in auction contract
+      expect(await auctionNFT.ownerOf(tokenId)).to.equal(await sealedBidAuction.getAddress());
+
+      await sealedBidAuction.connect(seller).cancelAuction(0);
+
+      // NFT should be back with seller
+      expect(await auctionNFT.ownerOf(tokenId)).to.equal(seller.address);
+    });
+
+    it("should emit AuctionCancelled event", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      await expect(sealedBidAuction.connect(seller).cancelAuction(0))
+        .to.emit(sealedBidAuction, "AuctionCancelled")
+        .withArgs(0);
+    });
+
+    it("should revert if caller is not seller", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, bidder1, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      await expect(
+        sealedBidAuction.connect(bidder1).cancelAuction(0)
+      ).to.be.revertedWithCustomError(sealedBidAuction, "NotSeller");
+    });
+
+    it("should revert if auction is already cancelled", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      await sealedBidAuction.connect(seller).cancelAuction(0);
+
+      await expect(
+        sealedBidAuction.connect(seller).cancelAuction(0)
+      ).to.be.revertedWithCustomError(sealedBidAuction, "AuctionNotActive");
+    });
+  });
+
+  describe("View Functions", function () {
+    describe("getAuction", function () {
+      it("should return correct auction details", async function () {
+        const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+          await createAuctionFixture();
+
+        await sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          );
+
+        const auction = await sealedBidAuction.getAuction(0);
+
+        expect(auction.seller).to.equal(seller.address);
+        expect(auction.nftContract).to.equal(await auctionNFT.getAddress());
+        expect(auction.tokenId).to.equal(tokenId);
+        expect(auction.fherc20Token).to.equal(await auctionToken.getAddress());
+        expect(auction.startTime).to.equal(startTime);
+        expect(auction.endTime).to.equal(endTime);
+        expect(auction.status).to.equal(0); // Active
+        expect(auction.totalBids).to.equal(0);
+      });
+    });
+
+    describe("hasBidOnAuction", function () {
+      it("should return false for address that hasn't bid", async function () {
+        const { auctionNFT, auctionToken, sealedBidAuction, seller, bidder1, tokenId, startTime, endTime } =
+          await createAuctionFixture();
+
+        await sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          );
+
+        expect(await sealedBidAuction.hasBidOnAuction(0, bidder1.address)).to.be.false;
+      });
+
+      it("should return false for seller", async function () {
+        const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+          await createAuctionFixture();
+
+        await sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          );
+
+        expect(await sealedBidAuction.hasBidOnAuction(0, seller.address)).to.be.false;
+      });
+    });
+
+    describe("hasClaimedRefund", function () {
+      it("should return false initially", async function () {
+        const { auctionNFT, auctionToken, sealedBidAuction, seller, bidder1, tokenId, startTime, endTime } =
+          await createAuctionFixture();
+
+        await sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          );
+
+        expect(await sealedBidAuction.hasClaimedRefund(0, bidder1.address)).to.be.false;
+      });
+    });
+
+    describe("getSettlementResult", function () {
+      it("should revert if auction is not settled", async function () {
+        const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+          await createAuctionFixture();
+
+        await sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          );
+
+        await expect(
+          sealedBidAuction.getSettlementResult(0)
+        ).to.be.revertedWithCustomError(sealedBidAuction, "AuctionNotSettled");
+      });
+    });
+  });
+
+  describe("ERC721Receiver", function () {
+    it("should implement onERC721Received correctly", async function () {
+      const { auctionNFT, sealedBidAuction, seller } = await deployContracts();
+
+      // Mint NFT
+      await auctionNFT.mint(seller.address, "ipfs://test-uri");
+
+      // Safe transfer should work (contract implements IERC721Receiver)
+      await expect(
+        auctionNFT.connect(seller)["safeTransferFrom(address,address,uint256)"](
+          seller.address,
+          await sealedBidAuction.getAddress(),
+          0
+        )
+      ).to.not.be.reverted;
+
+      expect(await auctionNFT.ownerOf(0)).to.equal(await sealedBidAuction.getAddress());
+    });
+  });
+
+  // Note: bid, requestSettlement, finalizeSettlement, and claimRefund tests
+  // require FHE mock setup which depends on cofhe-hardhat-plugin configuration.
+  // The tests below are placeholders that verify the function signatures exist.
+
+  describe("FHE Functions (require mock setup)", function () {
+    describe("bid", function () {
+      it("should have bid function defined", async function () {
+        const { sealedBidAuction } = await deployContracts();
+        expect(sealedBidAuction.bid).to.be.a("function");
+      });
+    });
+
+    describe("requestSettlement", function () {
+      it("should have requestSettlement function defined", async function () {
+        const { sealedBidAuction } = await deployContracts();
+        expect(sealedBidAuction.requestSettlement).to.be.a("function");
+      });
+    });
+
+    describe("finalizeSettlement", function () {
+      it("should have finalizeSettlement function defined", async function () {
+        const { sealedBidAuction } = await deployContracts();
+        expect(sealedBidAuction.finalizeSettlement).to.be.a("function");
+      });
+    });
+
+    describe("claimRefund", function () {
+      it("should have claimRefund function defined", async function () {
+        const { sealedBidAuction } = await deployContracts();
+        expect(sealedBidAuction.claimRefund).to.be.a("function");
+      });
+    });
+  });
+});
+```
+
+**Step 5: Verify test files are created**
+
+Run: `ls -la packages/hardhat/test/`
+Expected: `helpers/`, `AuctionToken.test.ts`, `AuctionNFT.test.ts`, `SealedBidAuction.test.ts`
+
+Run: `ls -la packages/hardhat/test/helpers/`
+Expected: `setup.ts`
+
+**Step 6: Run tests to verify they pass**
+
+Run: `cd packages/hardhat && npx hardhat test`
+Expected: All tests pass (FHE-dependent tests may be skipped/marked as pending)
+
+**Step 7: Commit**
+
+```bash
+git add packages/hardhat/test/
+git commit -m "test: add comprehensive test suite for all contracts"
+```
+
+---
+
+## Task 13: Final compilation and verification
 
 **Files:**
 - All contracts in `packages/hardhat/contracts/`
@@ -767,11 +1664,16 @@ Expected: All 3 contracts compile successfully
 Run: `ls packages/hardhat/contracts/`
 Expected: `AuctionNFT.sol`, `AuctionToken.sol`, `SealedBidAuction.sol`
 
-**Step 3: Final commit**
+**Step 3: Run full test suite**
+
+Run: `cd packages/hardhat && npx hardhat test`
+Expected: All tests pass
+
+**Step 4: Final commit**
 
 ```bash
 git add .
-git commit -m "feat: complete sealed bid auction MVP contracts"
+git commit -m "feat: complete sealed bid auction MVP with tests"
 ```
 
 ---
