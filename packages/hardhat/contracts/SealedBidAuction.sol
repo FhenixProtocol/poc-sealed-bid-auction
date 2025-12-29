@@ -254,4 +254,31 @@ contract SealedBidAuction is IERC721Receiver {
 
         emit AuctionSettled(auctionId, winner, amount);
     }
+
+    // ============ Refunds ============
+
+    /// @notice Claim refund for a losing bid
+    /// @param auctionId The auction to claim refund from
+    function claimRefund(uint256 auctionId) external {
+        Auction storage auction = auctions[auctionId];
+
+        if (auction.status != Status.Settled && auction.status != Status.Cancelled) {
+            revert AuctionNotSettled();
+        }
+        if (!hasBid[auctionId][msg.sender]) revert NotBidder();
+        if (hasRefunded[auctionId][msg.sender]) revert AlreadyRefunded();
+
+        // Winner cannot claim refund (their deposit went to seller)
+        if (auction.status == Status.Settled && msg.sender == auction.decryptedWinner) {
+            revert IsWinner();
+        }
+
+        hasRefunded[auctionId][msg.sender] = true;
+
+        // Transfer encrypted deposit back to bidder
+        euint64 deposit = bidderDeposits[auctionId][msg.sender];
+        FHERC20(auction.fherc20Token).confidentialTransfer(msg.sender, deposit);
+
+        emit RefundClaimed(auctionId, msg.sender);
+    }
 }
