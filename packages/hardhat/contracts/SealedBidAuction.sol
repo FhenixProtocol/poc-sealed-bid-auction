@@ -221,4 +221,37 @@ contract SealedBidAuction is IERC721Receiver {
 
         emit SettlementRequested(auctionId);
     }
+
+    /// @notice Finalize settlement after decryption is complete
+    /// @param auctionId The auction to finalize
+    /// @param winner The decrypted winner address (from callback/oracle)
+    /// @param amount The decrypted winning amount (from callback/oracle)
+    function finalizeSettlement(
+        uint256 auctionId,
+        address winner,
+        uint64 amount
+    ) external {
+        Auction storage auction = auctions[auctionId];
+
+        if (auction.status != Status.SettlementRequested) revert SettlementNotRequested();
+
+        // Store decrypted values
+        auction.decryptedWinner = winner;
+        auction.decryptedAmount = amount;
+
+        // Transfer winner's deposit to seller (encrypted transfer)
+        euint64 winningDeposit = bidderDeposits[auctionId][winner];
+        FHERC20(auction.fherc20Token).confidentialTransfer(auction.seller, winningDeposit);
+
+        // Transfer NFT to winner
+        IERC721(auction.nftContract).safeTransferFrom(
+            address(this),
+            winner,
+            auction.tokenId
+        );
+
+        auction.status = Status.Settled;
+
+        emit AuctionSettled(auctionId, winner, amount);
+    }
 }
