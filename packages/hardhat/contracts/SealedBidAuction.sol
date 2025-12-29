@@ -200,4 +200,25 @@ contract SealedBidAuction is IERC721Receiver {
 
         emit BidPlaced(auctionId, msg.sender, block.timestamp);
     }
+
+    // ============ Settlement ============
+
+    /// @notice Request settlement - initiates async decryption
+    /// @param auctionId The auction to settle
+    function requestSettlement(uint256 auctionId) external {
+        Auction storage auction = auctions[auctionId];
+
+        if (auction.status != Status.Active) revert AuctionNotActive();
+        if (block.timestamp < auction.endTime) revert AuctionNotEnded();
+        if (auction.totalBids == 0) revert NoBidsPlaced();
+
+        auction.status = Status.SettlementRequested;
+
+        // Request decryption of winner address and amount
+        // These are async operations on Fhenix
+        FHE.decrypt(auction.highestBidder);
+        FHE.decrypt(auction.highestBid);
+
+        emit SettlementRequested(auctionId);
+    }
 }
