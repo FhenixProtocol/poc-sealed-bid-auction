@@ -153,4 +153,51 @@ contract SealedBidAuction is IERC721Receiver {
             endTime
         );
     }
+
+    // ============ Bidding ============
+
+    /// @notice Place an encrypted bid
+    /// @dev Bidder must call fherc20.setOperator(auctionContract, until) before bidding
+    /// @param auctionId The auction to bid on
+    /// @param encryptedAmount The encrypted bid amount
+    function bid(uint256 auctionId, InEuint64 calldata encryptedAmount) external {
+        Auction storage auction = auctions[auctionId];
+
+        if (auction.status != Status.Active) revert AuctionNotActive();
+        if (block.timestamp < auction.startTime) revert AuctionNotActive();
+        if (block.timestamp >= auction.endTime) revert AuctionNotEnded();
+        if (hasBid[auctionId][msg.sender]) revert AlreadyBid();
+
+        // Convert input to euint64
+        euint64 bidAmount = FHE.asEuint64(encryptedAmount);
+
+        // Transfer encrypted tokens from bidder to contract
+        // Bidder must have set this contract as operator beforehand
+        FHERC20(auction.fherc20Token).confidentialTransferFrom(
+            msg.sender,
+            address(this),
+            bidAmount
+        );
+
+        // Store deposit for later refund
+        bidderDeposits[auctionId][msg.sender] = bidAmount;
+        hasBid[auctionId][msg.sender] = true;
+
+        // Compare and update winner using FHE operations
+        ebool isHigher = FHE.gt(bidAmount, auction.highestBid);
+        auction.highestBid = FHE.select(isHigher, bidAmount, auction.highestBid);
+        auction.highestBidder = FHE.select(
+            isHigher,
+            FHE.asEaddress(msg.sender),
+            auction.highestBidder
+        );
+
+        // Update permissions for the encrypted values
+        FHE.allowThis(auction.highestBid);
+        FHE.allowThis(auction.highestBidder);
+
+        auction.totalBids++;
+
+        emit BidPlaced(auctionId, msg.sender, block.timestamp);
+    }
 }
