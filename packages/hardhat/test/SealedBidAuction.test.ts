@@ -317,14 +317,14 @@ describe("SealedBidAuction", function () {
       const bidAmount = 100_000000n;
 
       // Get initial encrypted balance hash (non-zero after mint)
-      const initialBalance = await auctionToken.encryptedBalanceOf(bidder1.address);
+      const initialBalance = await auctionToken.confidentialBalanceOf(bidder1.address);
       expect(initialBalance).to.not.equal(0n, "Bidder should have encrypted balance after mint");
 
       const encryptedBid = await encryptBidAmount(bidder1, bidAmount);
       await sealedBidAuction.connect(bidder1).bid(auctionId, encryptedBid);
 
       // After bidding, the encrypted balance hash should change (tokens transferred)
-      const afterBalance = await auctionToken.encryptedBalanceOf(bidder1.address);
+      const afterBalance = await auctionToken.confidentialBalanceOf(bidder1.address);
       expect(afterBalance).to.not.equal(initialBalance, "Balance should change after bid");
     });
 
