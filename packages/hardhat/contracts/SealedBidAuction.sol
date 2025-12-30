@@ -143,6 +143,10 @@ contract SealedBidAuction is IERC721Receiver {
         auction.highestBid = FHE.asEuint64(0);
         auction.highestBidder = FHE.asEaddress(address(0));
 
+        // Grant this contract ACL permission on the initial encrypted values
+        FHE.allowThis(auction.highestBid);
+        FHE.allowThis(auction.highestBidder);
+
         emit AuctionCreated(
             auctionId,
             msg.sender,
@@ -171,21 +175,27 @@ contract SealedBidAuction is IERC721Receiver {
         // Convert input to euint64
         euint64 bidAmount = FHE.asEuint64(encryptedAmount);
 
+        // Grant the token ACL permission on the bid amount
+        // This is required for the token's _update function to compare against the bidder's balance
+        FHE.allow(bidAmount, auction.fherc20Token);
+
         // Transfer encrypted tokens from bidder to contract
         // Bidder must have set this contract as operator beforehand
-        FHERC20(auction.fherc20Token).confidentialTransferFrom(
+        // The returned 'transferred' value has ACL permission for this contract (msg.sender in token context)
+        euint64 transferred = FHERC20(auction.fherc20Token).confidentialTransferFrom(
             msg.sender,
             address(this),
             bidAmount
         );
 
-        // Store deposit for later refund
-        bidderDeposits[auctionId][msg.sender] = bidAmount;
+        // Store deposit for later refund (use the transferred value which has proper ACL)
+        bidderDeposits[auctionId][msg.sender] = transferred;
         hasBid[auctionId][msg.sender] = true;
 
         // Compare and update winner using FHE operations
-        ebool isHigher = FHE.gt(bidAmount, auction.highestBid);
-        auction.highestBid = FHE.select(isHigher, bidAmount, auction.highestBid);
+        // Use 'transferred' which has ACL permission for this contract
+        ebool isHigher = FHE.gt(transferred, auction.highestBid);
+        auction.highestBid = FHE.select(isHigher, transferred, auction.highestBid);
         auction.highestBidder = FHE.select(
             isHigher,
             FHE.asEaddress(msg.sender),
@@ -241,6 +251,8 @@ contract SealedBidAuction is IERC721Receiver {
 
         // Transfer winner's deposit to seller (encrypted transfer)
         euint64 winningDeposit = bidderDeposits[auctionId][winner];
+        // Grant the token ACL permission on the deposit amount
+        FHE.allow(winningDeposit, auction.fherc20Token);
         FHERC20(auction.fherc20Token).confidentialTransfer(auction.seller, winningDeposit);
 
         // Transfer NFT to winner
@@ -277,6 +289,8 @@ contract SealedBidAuction is IERC721Receiver {
 
         // Transfer encrypted deposit back to bidder
         euint64 deposit = bidderDeposits[auctionId][msg.sender];
+        // Grant the token ACL permission on the deposit amount
+        FHE.allow(deposit, auction.fherc20Token);
         FHERC20(auction.fherc20Token).confidentialTransfer(msg.sender, deposit);
 
         emit RefundClaimed(auctionId, msg.sender);
