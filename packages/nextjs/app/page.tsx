@@ -7,6 +7,7 @@ import { EncryptedText } from "@/components/EncryptedText";
 import { useNavigationStore, UserSubTab } from "@/services/store/navigationStore";
 import { DeployedContractsList } from "@/components/DeployedContractsList";
 import { TokenInteraction } from "@/components/TokenInteraction";
+import { AuctionsPage } from "@/components/auction";
 import { Coins, ArrowLeftRight } from "lucide-react";
 
 export default function Home() {
@@ -40,6 +41,7 @@ export default function Home() {
               {activeTab === "issuer" && "Confidential Token Wizard"}
               {activeTab === "user" && userSubTab === "tokens" && "Token Manager"}
               {activeTab === "user" && userSubTab === "interact" && "Token Interaction"}
+              {activeTab === "auctions" && "Sealed Bid Auctions"}
             </span>
           </div>
           <h1 className="text-5xl lg:text-6xl font-bold text-base-content tracking-tight font-display uppercase">
@@ -52,6 +54,8 @@ export default function Home() {
               "Manage your tokens, mint supply, and toggle privacy."}
             {activeTab === "user" && userSubTab === "interact" &&
               "Transfer tokens securely and access advanced features."}
+            {activeTab === "auctions" &&
+              "Create and participate in sealed-bid auctions with encrypted bids."}
           </p>
         </header>
 
@@ -96,6 +100,8 @@ export default function Home() {
             {userSubTab === "interact" && <TokenInteraction />}
           </div>
         )}
+
+        {activeTab === "auctions" && <AuctionsPage />}
       </main>
     </div>
   );
