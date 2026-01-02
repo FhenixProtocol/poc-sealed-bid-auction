@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type TabType = "issuer" | "user";
+export type TabType = "issuer" | "user" | "auctions";
 export type UserSubTab = "tokens" | "interact";
 
 interface NavigationState {
@@ -14,7 +14,7 @@ interface NavigationState {
 }
 
 export const useNavigationStore = create<NavigationState>((set) => ({
-  activeTab: "issuer",
+  activeTab: "auctions",
   userSubTab: "tokens",
   selectedTokenAddress: null,
   setActiveTab: (tab) => set({ activeTab: tab }),
