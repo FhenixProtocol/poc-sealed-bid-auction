@@ -164,7 +164,10 @@ export const sealedBidAuctionAbi = [
         name: "encryptedAmount",
         type: "tuple",
         components: [
-          { name: "data", type: "bytes" },
+          { name: "ctHash", type: "uint256" },
+          { name: "securityZone", type: "uint8" },
+          { name: "utype", type: "uint8" },
+          { name: "signature", type: "bytes" },
         ],
       },
     ],
