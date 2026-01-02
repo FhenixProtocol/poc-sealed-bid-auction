@@ -3,7 +3,7 @@
 import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
-import { Wallet, LogOut, Network, ChevronDown, Check } from "lucide-react";
+import { Wallet, LogOut, Network, ChevronDown, Check, Gavel } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 import { useNavigationStore, TabType } from "@/services/store/navigationStore";
@@ -65,21 +65,23 @@ export const Navbar = () => {
 
           {/* Center - Tabs */}
           <div className="hidden md:flex items-center gap-1 bg-base-200 p-1 rounded-sm border border-base-300">
-            {(["issuer", "user"] as TabType[]).map((tab, index) => (
+            {(["auctions", "issuer", "user"] as TabType[]).map((tab, index) => (
               <div key={tab} className="flex items-center">
                 <button
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider transition-all font-bold ${
+                  className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider transition-all font-bold flex items-center gap-2 ${
                     activeTab === tab
                       ? "btn-fhenix shadow-sm"
                       : "text-base-content/60 hover:text-base-content hover:bg-base-300/50"
                   }`}
                 >
+                  {tab === "auctions" && <Gavel className="w-4 h-4" />}
                   <span className="opacity-50 mr-1">{index + 1}.</span>
+                  {tab === "auctions" && <span className="hidden sm:inline">Auctions</span>}
                   {tab === "issuer" && "Issuer"}
                   {tab === "user" && "User"}
                 </button>
-                {index < 1 && (
+                {index < 2 && (
                   <div className="px-2 font-mono text-sm font-bold text-fhenix-accent">
                     →
                   </div>
