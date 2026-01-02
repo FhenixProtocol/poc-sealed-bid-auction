@@ -6,7 +6,6 @@ import Image from "next/image";
 import { Wallet, LogOut, Network, ChevronDown, Check, Gavel } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ThemeToggle } from "./ThemeToggle";
-import { useNavigationStore, TabType } from "@/services/store/navigationStore";
 
 export const Navbar = () => {
   const { isConnected, address, chain } = useAccount();
@@ -15,7 +14,6 @@ export const Navbar = () => {
   const { chains, switchChain } = useSwitchChain();
   const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { activeTab, setActiveTab } = useNavigationStore();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -63,31 +61,12 @@ export const Navbar = () => {
             </div>
           </div>
 
-          {/* Center - Tabs */}
+          {/* Center - Auctions Badge */}
           <div className="hidden md:flex items-center gap-1 bg-base-200 p-1 rounded-sm border border-base-300">
-            {(["auctions", "issuer", "user"] as TabType[]).map((tab, index) => (
-              <div key={tab} className="flex items-center">
-                <button
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider transition-all font-bold flex items-center gap-2 ${
-                    activeTab === tab
-                      ? "btn-fhenix shadow-sm"
-                      : "text-base-content/60 hover:text-base-content hover:bg-base-300/50"
-                  }`}
-                >
-                  {tab === "auctions" && <Gavel className="w-4 h-4" />}
-                  <span className="opacity-50 mr-1">{index + 1}.</span>
-                  {tab === "auctions" && <span className="hidden sm:inline">Auctions</span>}
-                  {tab === "issuer" && "Issuer"}
-                  {tab === "user" && "User"}
-                </button>
-                {index < 2 && (
-                  <div className="px-2 font-mono text-sm font-bold text-fhenix-accent">
-                    →
-                  </div>
-                )}
-              </div>
-            ))}
+            <div className="px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 btn-fhenix shadow-sm">
+              <Gavel className="w-4 h-4" />
+              <span className="hidden sm:inline">Auctions</span>
+            </div>
           </div>
 
           {/* Right side - Network & Wallet */}
