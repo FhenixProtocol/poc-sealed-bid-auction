@@ -3,9 +3,10 @@
 import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
-import { Wallet, LogOut, Network, ChevronDown, Check, Gavel } from "lucide-react";
+import { Wallet, LogOut, Network, ChevronDown, Check, Gavel, Coins } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuctionStore, MainTab } from "@/services/store/auctionStore";
 
 export const Navbar = () => {
   const { isConnected, address, chain } = useAccount();
@@ -14,6 +15,7 @@ export const Navbar = () => {
   const { chains, switchChain } = useSwitchChain();
   const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { mainTab, setMainTab } = useAuctionStore();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -61,12 +63,30 @@ export const Navbar = () => {
             </div>
           </div>
 
-          {/* Center - Auctions Badge */}
+          {/* Center - Tab Navigation */}
           <div className="hidden md:flex items-center gap-1 bg-base-200 p-1 rounded-sm border border-base-300">
-            <div className="px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 btn-fhenix shadow-sm">
+            <button
+              onClick={() => setMainTab("auctions")}
+              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
+                mainTab === "auctions"
+                  ? "btn-fhenix shadow-sm"
+                  : "hover:bg-base-300"
+              }`}
+            >
               <Gavel className="w-4 h-4" />
               <span className="hidden sm:inline">Auctions</span>
-            </div>
+            </button>
+            <button
+              onClick={() => setMainTab("mint")}
+              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
+                mainTab === "mint"
+                  ? "btn-fhenix shadow-sm"
+                  : "hover:bg-base-300"
+              }`}
+            >
+              <Coins className="w-4 h-4" />
+              <span className="hidden sm:inline">Mint</span>
+            </button>
           </div>
 
           {/* Right side - Network & Wallet */}

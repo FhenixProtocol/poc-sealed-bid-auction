@@ -1,10 +1,13 @@
 import { create } from "zustand";
 import { AuctionData } from "@/utils/auctionContracts";
 
+export type MainTab = "auctions" | "mint";
 export type AuctionSubTab = "browse" | "create" | "my-auctions" | "my-bids";
 
 interface AuctionStore {
   // Navigation
+  mainTab: MainTab;
+  setMainTab: (tab: MainTab) => void;
   auctionSubTab: AuctionSubTab;
   setAuctionSubTab: (tab: AuctionSubTab) => void;
 
@@ -28,7 +31,9 @@ interface AuctionStore {
 }
 
 export const useAuctionStore = create<AuctionStore>((set, get) => ({
-  // Navigation - default to "browse"
+  // Navigation
+  mainTab: "auctions",
+  setMainTab: (tab) => set({ mainTab: tab }),
   auctionSubTab: "browse",
   setAuctionSubTab: (tab) => set({ auctionSubTab: tab }),
 
