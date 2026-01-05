@@ -2,8 +2,12 @@
 
 import { Navbar } from "@/components/Navbar";
 import { AuctionsPage } from "@/components/auction";
+import { MintPage } from "@/components/mint";
+import { useAuctionStore } from "@/services/store/auctionStore";
 
 export default function Home() {
+  const mainTab = useAuctionStore((state) => state.mainTab);
+
   return (
     <div className="min-h-screen bg-base-200 font-sans selection:bg-primary selection:text-base-100">
       {/* Background Grid Effect */}
@@ -29,18 +33,20 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <div className="h-px w-8 bg-primary opacity-50"></div>
             <span className="text-primary font-pixel text-sm tracking-widest uppercase">
-              Sealed Bid Auctions
+              {mainTab === "auctions" ? "Sealed Bid Auctions" : "Test Assets"}
             </span>
           </div>
           <h1 className="text-5xl lg:text-6xl font-bold text-base-content tracking-tight font-display uppercase">
-            Sealed Bid Auctions
+            {mainTab === "auctions" ? "Sealed Bid Auctions" : "Mint Test Assets"}
           </h1>
           <p className="text-base-content/60 text-lg font-medium">
-            Create and participate in sealed-bid auctions with encrypted bids.
+            {mainTab === "auctions"
+              ? "Create and participate in sealed-bid auctions with encrypted bids."
+              : "Mint NFTs and tokens to test the auction system."}
           </p>
         </header>
 
-        <AuctionsPage />
+        {mainTab === "auctions" ? <AuctionsPage /> : <MintPage />}
       </main>
     </div>
   );
