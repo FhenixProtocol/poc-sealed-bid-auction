@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { Plus, Calendar, Clock, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuction } from "@/hooks/useAuction";
+import { NFTSelector } from "./NFTSelector";
 
 /**
  * Form component for creating new auctions
@@ -14,9 +15,8 @@ export const CreateAuctionForm = () => {
   const { address } = useAccount();
   const { createAuction, nftContractAddress, tokenContractAddress, isLoading } = useAuction();
 
-  // Form state - simplified (no payment token field)
-  const [nftContract, setNftContract] = useState<string>(nftContractAddress || "");
-  const [tokenId, setTokenId] = useState<string>("");
+  // Form state - simplified (uses NFTSelector for token selection)
+  const [selectedTokenId, setSelectedTokenId] = useState<bigint | null>(null);
   const [startDate, setStartDate] = useState<string>("");
   const [startTime, setStartTime] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -28,26 +28,20 @@ export const CreateAuctionForm = () => {
    * Reset all form fields to initial values
    */
   const resetForm = useCallback(() => {
-    setNftContract(nftContractAddress || "");
-    setTokenId("");
+    setSelectedTokenId(null);
     setStartDate("");
     setStartTime("");
     setEndDate("");
     setEndTime("");
-  }, [nftContractAddress]);
+  }, []);
 
   /**
    * Validate form inputs before submission
    */
   const validateForm = (): boolean => {
-    // Check all fields are filled
-    if (!nftContract.trim()) {
-      toast.error("NFT contract address is required");
-      return false;
-    }
-
-    if (!tokenId.trim()) {
-      toast.error("Token ID is required");
+    // Check NFT is selected
+    if (selectedTokenId === null) {
+      toast.error("Please select an NFT");
       return false;
     }
 
@@ -78,17 +72,9 @@ export const CreateAuctionForm = () => {
       return false;
     }
 
-    // Validate address (basic hex check)
-    const addressRegex = /^0x[a-fA-F0-9]{40}$/;
-    if (!addressRegex.test(nftContract)) {
-      toast.error("Invalid NFT contract address format");
-      return false;
-    }
-
-    // Validate token ID is a positive number
-    const tokenIdNum = parseInt(tokenId, 10);
-    if (isNaN(tokenIdNum) || tokenIdNum < 0) {
-      toast.error("Token ID must be a valid non-negative number");
+    // Check NFT contract is configured
+    if (!nftContractAddress) {
+      toast.error("NFT contract not configured. Please check environment variables.");
       return false;
     }
 
@@ -120,10 +106,11 @@ export const CreateAuctionForm = () => {
     const startTimestamp = BigInt(Math.floor(new Date(`${startDate}T${startTime}`).getTime() / 1000));
     const endTimestamp = BigInt(Math.floor(new Date(`${endDate}T${endTime}`).getTime() / 1000));
 
-    // Use the fixed token address from environment
+    // Use the fixed addresses from environment
+    // selectedTokenId is guaranteed to be non-null here due to validateForm() check
     const result = await createAuction(
-      nftContract as `0x${string}`,
-      BigInt(tokenId),
+      nftContractAddress as `0x${string}`,
+      selectedTokenId!,
       tokenContractAddress as `0x${string}`,
       startTimestamp,
       endTimestamp
@@ -156,40 +143,12 @@ export const CreateAuctionForm = () => {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* NFT Contract Address */}
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text font-pixel uppercase tracking-widest text-xs">
-              NFT Contract Address
-            </span>
-          </label>
-          <input
-            type="text"
-            placeholder="0x..."
-            value={nftContract}
-            onChange={(e) => setNftContract(e.target.value)}
-            disabled={!isWalletConnected || isLoading}
-            className="input input-bordered font-mono text-sm"
-          />
-        </div>
-
-        {/* Token ID */}
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text font-pixel uppercase tracking-widest text-xs">
-              Token ID
-            </span>
-          </label>
-          <input
-            type="number"
-            placeholder="0"
-            min="0"
-            value={tokenId}
-            onChange={(e) => setTokenId(e.target.value)}
-            disabled={!isWalletConnected || isLoading}
-            className="input input-bordered font-mono text-sm"
-          />
-        </div>
+        {/* NFT Selector */}
+        <NFTSelector
+          selectedTokenId={selectedTokenId}
+          onSelect={setSelectedTokenId}
+          disabled={!isWalletConnected || isLoading}
+        />
 
         {/* Start Date/Time */}
         <div className="form-control">
