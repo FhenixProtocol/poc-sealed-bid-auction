@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Loader2, RefreshCw, Filter } from "lucide-react";
 import { AuctionCard } from "./AuctionCard";
+import { AuctionDetailModal } from "./AuctionDetailModal";
 import { useAuction } from "@/hooks/useAuction";
 import { useAuctionStore } from "@/services/store/auctionStore";
 import {
@@ -38,6 +39,7 @@ export const AuctionList = ({
   const [auctions, setAuctions] = useState<AuctionData[]>([]);
   const [uiStatusFilter, setUiStatusFilter] = useState<string>("all");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [selectedAuction, setSelectedAuction] = useState<AuctionData | null>(null);
 
   // Load auctions on mount and when refreshTrigger changes
   useEffect(() => {
@@ -174,10 +176,21 @@ export const AuctionList = ({
             <AuctionCard
               key={auction.id.toString()}
               auction={auction}
-              onClick={onSelectAuction ? () => onSelectAuction(auction) : undefined}
+              onClick={() => {
+                setSelectedAuction(auction);
+                onSelectAuction?.(auction);
+              }}
             />
           ))}
         </div>
+      )}
+
+      {selectedAuction && (
+        <AuctionDetailModal
+          auction={selectedAuction}
+          isOpen={!!selectedAuction}
+          onClose={() => setSelectedAuction(null)}
+        />
       )}
     </div>
   );
