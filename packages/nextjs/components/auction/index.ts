@@ -4,3 +4,4 @@ export { AuctionDetail } from "./AuctionDetail";
 export { CreateAuctionForm } from "./CreateAuctionForm";
 export { PlaceBidModal } from "./PlaceBidModal";
 export { AuctionsPage } from "./AuctionsPage";
+export { NFTSelector } from "./NFTSelector";
