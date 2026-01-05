@@ -8,16 +8,15 @@ import { useAuction } from "@/hooks/useAuction";
 
 /**
  * Form component for creating new auctions
- * Handles NFT contract, token ID, payment token, and auction timing
+ * Simplified: uses fixed token from env, only requires NFT contract, token ID, and timing
  */
 export const CreateAuctionForm = () => {
   const { address } = useAccount();
   const { createAuction, nftContractAddress, tokenContractAddress, isLoading } = useAuction();
 
-  // Form state
+  // Form state - simplified (no payment token field)
   const [nftContract, setNftContract] = useState<string>(nftContractAddress || "");
   const [tokenId, setTokenId] = useState<string>("");
-  const [paymentToken, setPaymentToken] = useState<string>(tokenContractAddress || "");
   const [startDate, setStartDate] = useState<string>("");
   const [startTime, setStartTime] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -31,12 +30,11 @@ export const CreateAuctionForm = () => {
   const resetForm = useCallback(() => {
     setNftContract(nftContractAddress || "");
     setTokenId("");
-    setPaymentToken(tokenContractAddress || "");
     setStartDate("");
     setStartTime("");
     setEndDate("");
     setEndTime("");
-  }, [nftContractAddress, tokenContractAddress]);
+  }, [nftContractAddress]);
 
   /**
    * Validate form inputs before submission
@@ -50,11 +48,6 @@ export const CreateAuctionForm = () => {
 
     if (!tokenId.trim()) {
       toast.error("Token ID is required");
-      return false;
-    }
-
-    if (!paymentToken.trim()) {
-      toast.error("Payment token address is required");
       return false;
     }
 
@@ -85,15 +78,10 @@ export const CreateAuctionForm = () => {
       return false;
     }
 
-    // Validate addresses (basic hex check)
+    // Validate address (basic hex check)
     const addressRegex = /^0x[a-fA-F0-9]{40}$/;
     if (!addressRegex.test(nftContract)) {
       toast.error("Invalid NFT contract address format");
-      return false;
-    }
-
-    if (!addressRegex.test(paymentToken)) {
-      toast.error("Invalid payment token address format");
       return false;
     }
 
@@ -101,6 +89,12 @@ export const CreateAuctionForm = () => {
     const tokenIdNum = parseInt(tokenId, 10);
     if (isNaN(tokenIdNum) || tokenIdNum < 0) {
       toast.error("Token ID must be a valid non-negative number");
+      return false;
+    }
+
+    // Check token contract is configured
+    if (!tokenContractAddress) {
+      toast.error("Payment token not configured. Please check environment variables.");
       return false;
     }
 
@@ -126,10 +120,11 @@ export const CreateAuctionForm = () => {
     const startTimestamp = BigInt(Math.floor(new Date(`${startDate}T${startTime}`).getTime() / 1000));
     const endTimestamp = BigInt(Math.floor(new Date(`${endDate}T${endTime}`).getTime() / 1000));
 
+    // Use the fixed token address from environment
     const result = await createAuction(
       nftContract as `0x${string}`,
       BigInt(tokenId),
-      paymentToken as `0x${string}`,
+      tokenContractAddress as `0x${string}`,
       startTimestamp,
       endTimestamp
     );
@@ -191,23 +186,6 @@ export const CreateAuctionForm = () => {
             min="0"
             value={tokenId}
             onChange={(e) => setTokenId(e.target.value)}
-            disabled={!isWalletConnected || isLoading}
-            className="input input-bordered font-mono text-sm"
-          />
-        </div>
-
-        {/* Payment Token Address */}
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text font-pixel uppercase tracking-widest text-xs">
-              Payment Token Address
-            </span>
-          </label>
-          <input
-            type="text"
-            placeholder="0x..."
-            value={paymentToken}
-            onChange={(e) => setPaymentToken(e.target.value)}
             disabled={!isWalletConnected || isLoading}
             className="input input-bordered font-mono text-sm"
           />

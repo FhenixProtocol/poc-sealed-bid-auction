@@ -1,12 +1,12 @@
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { arbitrumSepolia, sepolia, baseSepolia } from "wagmi/chains";
+import { arbitrumSepolia } from "wagmi/chains";
 
 export const config = getDefaultConfig({
-  appName: "Shielded Stablecoin Wizard",
+  appName: "Sealed Bid Auction",
   projectId:
     process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo-project-id",
-  chains: [arbitrumSepolia, baseSepolia, sepolia],
+  chains: [arbitrumSepolia],
   ssr: true,
 });

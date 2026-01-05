@@ -1,21 +1,15 @@
-import { arbitrumSepolia, sepolia, baseSepolia } from "wagmi/chains";
+const ARBISCAN_URL = "https://sepolia.arbiscan.io";
 
-const BLOCK_EXPLORERS: Record<number, string> = {
-  [sepolia.id]: "https://sepolia.etherscan.io",
-  [arbitrumSepolia.id]: "https://sepolia.arbiscan.io",
-  [baseSepolia.id]: "https://sepolia.basescan.org",
-};
-
-export function getBlockExplorerUrl(chainId: number): string {
-  return BLOCK_EXPLORERS[chainId] || "https://sepolia.etherscan.io";
+export function getBlockExplorerUrl(): string {
+  return ARBISCAN_URL;
 }
 
-export function getBlockExplorerTxUrl(chainId: number, txHash: string): string {
-  return `${getBlockExplorerUrl(chainId)}/tx/${txHash}`;
+export function getBlockExplorerTxUrl(txHash: string): string {
+  return `${ARBISCAN_URL}/tx/${txHash}`;
 }
 
-export function getBlockExplorerAddressUrl(chainId: number, address: string): string {
-  return `${getBlockExplorerUrl(chainId)}/address/${address}`;
+export function getBlockExplorerAddressUrl(address: string): string {
+  return `${ARBISCAN_URL}/address/${address}`;
 }
 
 export function formatTxHash(hash: string): string {
