@@ -66,17 +66,6 @@ export const Navbar = () => {
           {/* Center - Tab Navigation */}
           <div className="hidden md:flex items-center gap-1 bg-base-200 p-1 rounded-sm border border-base-300">
             <button
-              onClick={() => setMainTab("auctions")}
-              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
-                mainTab === "auctions"
-                  ? "btn-fhenix shadow-sm"
-                  : "hover:bg-base-300"
-              }`}
-            >
-              <Gavel className="w-4 h-4" />
-              <span className="hidden sm:inline">Auctions</span>
-            </button>
-            <button
               onClick={() => setMainTab("mint")}
               className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
                 mainTab === "mint"
@@ -86,6 +75,17 @@ export const Navbar = () => {
             >
               <Coins className="w-4 h-4" />
               <span className="hidden sm:inline">Mint</span>
+            </button>
+            <button
+              onClick={() => setMainTab("auctions")}
+              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
+                mainTab === "auctions"
+                  ? "btn-fhenix shadow-sm"
+                  : "hover:bg-base-300"
+              }`}
+            >
+              <Gavel className="w-4 h-4" />
+              <span className="hidden sm:inline">Auctions</span>
             </button>
           </div>
 

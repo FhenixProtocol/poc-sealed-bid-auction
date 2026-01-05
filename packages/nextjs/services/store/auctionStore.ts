@@ -31,8 +31,8 @@ interface AuctionStore {
 }
 
 export const useAuctionStore = create<AuctionStore>((set, get) => ({
-  // Navigation
-  mainTab: "auctions",
+  // Navigation - default to mint tab for new users
+  mainTab: "mint",
   setMainTab: (tab) => set({ mainTab: tab }),
   auctionSubTab: "browse",
   setAuctionSubTab: (tab) => set({ auctionSubTab: tab }),
