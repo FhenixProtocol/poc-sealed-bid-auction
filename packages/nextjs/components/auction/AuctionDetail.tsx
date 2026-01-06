@@ -50,6 +50,8 @@ function formatTokenAmount(amount: bigint): string {
 /**
  * Detailed view of a single auction with actions
  */
+type SettlementStep = "request" | "waiting" | "finalize";
+
 export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const { address } = useAccount();
   const {
@@ -58,6 +60,8 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     hasClaimedRefund,
     getSettlementResult,
     requestSettlement,
+    finalizeSettlement,
+    isDecryptionReady,
     claimRefund,
     cancelAuction,
     isLoading,
@@ -70,6 +74,10 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const [settlementResult, setSettlementResult] = useState<SettlementResult | null>(null);
   const [showBidModal, setShowBidModal] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
+
+  // Settlement flow state
+  const [settlementStep, setSettlementStep] = useState<SettlementStep>("request");
+  const [isPolling, setIsPolling] = useState(false);
 
   /**
    * Load all auction data
@@ -101,17 +109,51 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
         const result = await getSettlementResult(auctionId);
         setSettlementResult(result);
       }
+
+      // Check settlement step based on status
+      if (auctionData.status === AuctionStatus.SettlementRequested) {
+        const ready = await isDecryptionReady(auctionId);
+        if (ready) {
+          setSettlementStep("finalize");
+        } else {
+          setSettlementStep("waiting");
+        }
+      } else if (auctionData.status === AuctionStatus.Active) {
+        setSettlementStep("request");
+      }
     } catch (error) {
       console.error("Failed to load auction data:", error);
     } finally {
       setIsLoadingData(false);
     }
-  }, [auctionId, address, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult]);
+  }, [auctionId, address, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult, isDecryptionReady]);
 
   // Load data on mount and when dependencies change
   useEffect(() => {
     loadAuctionData();
   }, [loadAuctionData]);
+
+  // Poll for decryption readiness when in "waiting" step
+  useEffect(() => {
+    if (settlementStep !== "waiting") {
+      return;
+    }
+
+    setIsPolling(true);
+    const interval = setInterval(async () => {
+      const ready = await isDecryptionReady(auctionId);
+      if (ready) {
+        setSettlementStep("finalize");
+        setIsPolling(false);
+        clearInterval(interval);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(interval);
+      setIsPolling(false);
+    };
+  }, [settlementStep, auctionId, isDecryptionReady]);
 
   /**
    * Handle refresh button click
@@ -125,6 +167,17 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
    */
   const handleRequestSettlement = async () => {
     const success = await requestSettlement(auctionId);
+    if (success) {
+      setSettlementStep("waiting");
+      loadAuctionData();
+    }
+  };
+
+  /**
+   * Handle finalize settlement action
+   */
+  const handleFinalizeSettlement = async () => {
+    const success = await finalizeSettlement(auctionId);
     if (success) {
       loadAuctionData();
     }
@@ -174,11 +227,14 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     !userHasBid &&
     !isSeller;
 
-  const showRequestSettlement =
+  // Show settlement flow for seller when auction has ended with bids
+  const showSettlementFlow =
     auction &&
+    isSeller &&
     isAuctionEnded &&
-    isAuctionActive &&
-    auction.totalBids > BigInt(0);
+    auction.totalBids > BigInt(0) &&
+    auction.status !== AuctionStatus.Settled &&
+    auction.status !== AuctionStatus.Cancelled;
 
   const showClaimRefund =
     auction &&
@@ -399,7 +455,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
           </div>
 
           {/* Action Buttons Card */}
-          {(showPlaceBid || showRequestSettlement || showClaimRefund || showCancelAuction) && (
+          {(showPlaceBid || showSettlementFlow || showClaimRefund || showCancelAuction) && (
             <div className="bg-base-200 border border-base-300 p-5">
               <h3 className="text-sm font-display uppercase tracking-widest text-base-content/50 mb-4">
                 Actions
@@ -421,20 +477,62 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                   </button>
                 )}
 
-                {/* Request Settlement Button */}
-                {showRequestSettlement && (
-                  <button
-                    onClick={handleRequestSettlement}
-                    disabled={isLoading}
-                    className="btn btn-success w-full font-display uppercase tracking-wide"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="w-4 h-4" />
+                {/* Settlement Flow */}
+                {showSettlementFlow && (
+                  <div className="space-y-3">
+                    {/* Step indicator */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className={settlementStep === "request" ? "text-primary font-bold" : "text-success"}>
+                        1. Request
+                      </span>
+                      <span className={settlementStep === "waiting" ? "text-yellow-500 font-bold" : settlementStep === "finalize" ? "text-success" : "text-base-content/40"}>
+                        2. Decrypt
+                      </span>
+                      <span className={settlementStep === "finalize" ? "text-primary font-bold" : "text-base-content/40"}>
+                        3. Finalize
+                      </span>
+                    </div>
+
+                    {/* Settlement button */}
+                    {settlementStep === "request" && (
+                      <button
+                        onClick={handleRequestSettlement}
+                        disabled={isLoading}
+                        className="btn btn-success w-full font-display uppercase tracking-wide"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CheckCircle className="w-4 h-4" />
+                        )}
+                        Request Settlement
+                      </button>
                     )}
-                    Request Settlement
-                  </button>
+
+                    {settlementStep === "waiting" && (
+                      <div className="flex flex-col items-center gap-2 py-3">
+                        <Loader2 className="w-6 h-6 animate-spin text-yellow-500" />
+                        <span className="text-sm text-yellow-500 font-display uppercase">
+                          Waiting for decryption...
+                        </span>
+                      </div>
+                    )}
+
+                    {settlementStep === "finalize" && (
+                      <button
+                        onClick={handleFinalizeSettlement}
+                        disabled={isLoading}
+                        className="btn btn-primary w-full font-display uppercase tracking-wide"
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trophy className="w-4 h-4" />
+                        )}
+                        Finalize Settlement
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {/* Claim Refund Button */}

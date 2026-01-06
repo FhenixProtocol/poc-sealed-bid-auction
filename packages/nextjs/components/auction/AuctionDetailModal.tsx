@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
-import { X, Clock, Users, Gavel, Trophy, AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { X, Clock, Users, Gavel, Trophy, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 import { useAuction } from "@/hooks/useAuction";
 import {
   AuctionData,
@@ -43,9 +43,12 @@ function formatDuration(startTime: bigint, endTime: bigint): string {
   return `${minutes}m`;
 }
 
-export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailModalProps) => {
+type SettlementStep = "request" | "waiting" | "finalize";
+
+export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }: AuctionDetailModalProps) => {
   const { address } = useAccount();
   const {
+    getAuction,
     hasBidOnAuction,
     hasClaimedRefund,
     getSettlementResult,
@@ -57,17 +60,19 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
     isLoading,
   } = useAuction();
 
+  // Local auction state - starts with prop, but we refresh it after operations
+  const [auction, setAuction] = useState<AuctionData>(initialAuction);
+
   const [userHasBid, setUserHasBid] = useState(false);
   const [userHasRefunded, setUserHasRefunded] = useState(false);
   const [settlementResult, setSettlementResult] = useState<SettlementResult | null>(null);
   const [showBidModal, setShowBidModal] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
 
-  // Settlement polling state
-  const [decryptionReady, setDecryptionReady] = useState(false);
-  const [isPollingDecryption, setIsPollingDecryption] = useState(false);
-  // Track local settlement requested state (since auction prop may not update immediately)
-  const [localSettlementRequested, setLocalSettlementRequested] = useState(false);
+  // Settlement flow state - like unshield: request -> waiting -> finalize
+  const [settlementStep, setSettlementStep] = useState<SettlementStep>("request");
+  const [isPolling, setIsPolling] = useState(false);
+  const [settlementCompleted, setSettlementCompleted] = useState(false);
 
   const isSeller = address?.toLowerCase() === auction.seller.toLowerCase();
   const now = BigInt(Math.floor(Date.now() / 1000));
@@ -76,82 +81,105 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
   const effectiveStatus = getEffectiveStatus(auction);
   const isActive = effectiveStatus === AuctionStatus.Active && hasStarted && !hasEnded;
 
-  // Fetch user status and settlement result
+  // Get the numeric status for comparisons
+  const statusNum = Number(auction.status);
+
+  // Refresh auction data from the chain
+  const refreshAuction = useCallback(async () => {
+    const freshAuction = await getAuction(auction.id);
+    if (freshAuction) {
+      setAuction(freshAuction);
+    }
+  }, [getAuction, auction.id]);
+
+  // Sync with prop when modal opens with new auction
+  useEffect(() => {
+    setAuction(initialAuction);
+  }, [initialAuction]);
+
+  // Fetch fresh auction data and user status when modal opens
   useEffect(() => {
     const fetchStatus = async () => {
       if (!address || !isOpen) return;
 
       setIsCheckingStatus(true);
 
+      // First, refresh auction data from the chain
+      const freshAuction = await getAuction(initialAuction.id);
+      if (freshAuction) {
+        setAuction(freshAuction);
+      }
+      const auctionToUse = freshAuction || auction;
+      const freshStatusNum = Number(auctionToUse.status);
+
       const [hasBid, hasRefund] = await Promise.all([
-        hasBidOnAuction(auction.id, address),
-        hasClaimedRefund(auction.id, address),
+        hasBidOnAuction(auctionToUse.id, address),
+        hasClaimedRefund(auctionToUse.id, address),
       ]);
 
       setUserHasBid(hasBid);
       setUserHasRefunded(hasRefund);
 
-      if (auction.status === AuctionStatus.Settled) {
-        const result = await getSettlementResult(auction.id);
+      if (freshStatusNum === AuctionStatus.Settled) {
+        const result = await getSettlementResult(auctionToUse.id);
         setSettlementResult(result);
+        setSettlementCompleted(true);
       }
 
-      // Check if decryption is ready for SettlementRequested status
-      if (auction.status === AuctionStatus.SettlementRequested) {
-        const ready = await isDecryptionReady(auction.id);
-        setDecryptionReady(ready);
+      // Check existing settlement status
+      if (freshStatusNum === AuctionStatus.SettlementRequested) {
+        const ready = await isDecryptionReady(auctionToUse.id);
+        if (ready) {
+          setSettlementStep("finalize");
+        } else {
+          setSettlementStep("waiting");
+        }
       }
 
       setIsCheckingStatus(false);
     };
 
     fetchStatus();
-  }, [address, auction.id, auction.status, isOpen, hasBidOnAuction, hasClaimedRefund, getSettlementResult, isDecryptionReady]);
+  }, [address, initialAuction.id, isOpen, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult, isDecryptionReady]);
 
-  // Poll for decryption readiness when settlement is requested
+  // Poll for decryption readiness when in "waiting" step
   useEffect(() => {
-    const isSettlementInProgress = auction.status === AuctionStatus.SettlementRequested || localSettlementRequested;
-    if (!isSettlementInProgress || decryptionReady || !isOpen) {
+    if (settlementStep !== "waiting" || !isOpen) {
       return;
     }
 
-    setIsPollingDecryption(true);
-    const pollInterval = setInterval(async () => {
+    setIsPolling(true);
+    const interval = setInterval(async () => {
       const ready = await isDecryptionReady(auction.id);
       if (ready) {
-        setDecryptionReady(true);
-        setIsPollingDecryption(false);
-        clearInterval(pollInterval);
+        setSettlementStep("finalize");
+        setIsPolling(false);
+        clearInterval(interval);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 2000); // Poll every 2 seconds
 
     return () => {
-      clearInterval(pollInterval);
-      setIsPollingDecryption(false);
+      clearInterval(interval);
+      setIsPolling(false);
     };
-  }, [auction.id, auction.status, decryptionReady, isDecryptionReady, isOpen, localSettlementRequested]);
+  }, [settlementStep, auction.id, isDecryptionReady, isOpen]);
 
   const handleRequestSettlement = async () => {
     const success = await requestSettlement(auction.id);
     if (success) {
-      // Mark settlement as requested locally and start polling for decryption
-      setLocalSettlementRequested(true);
-      setDecryptionReady(false);
+      // Refresh auction data to get the new status
+      await refreshAuction();
+      setSettlementStep("waiting");
     }
   };
 
   const handleFinalizeSettlement = async () => {
-    // Contract retrieves decrypted winner/amount from FHE system
     const success = await finalizeSettlement(auction.id);
     if (success) {
+      setSettlementCompleted(true);
       onClose();
     }
   };
-
-  const handleCheckDecryption = useCallback(async () => {
-    const ready = await isDecryptionReady(auction.id);
-    setDecryptionReady(ready);
-  }, [auction.id, isDecryptionReady]);
 
   const handleClaimRefund = async () => {
     const success = await claimRefund(auction.id);
@@ -169,17 +197,42 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
 
   if (!isOpen) return null;
 
-  // Consider settlement requested if either the contract says so OR we just requested it locally
-  const isSettlementRequested = auction.status === AuctionStatus.SettlementRequested || localSettlementRequested;
-
   const isWinner = settlementResult?.winner.toLowerCase() === address?.toLowerCase();
+
+  // Simplified conditions
   const canPlaceBid = isActive && !isSeller && !userHasBid;
-  const canRequestSettlement = isSeller && auction.status === AuctionStatus.Active && !localSettlementRequested && hasEnded && auction.totalBids > BigInt(0);
-  const canFinalizeSettlement = isSeller && isSettlementRequested;
-  const canClaimRefund = (auction.status === AuctionStatus.Settled || auction.status === AuctionStatus.Cancelled)
-    && userHasBid && !userHasRefunded && !isWinner;
-  // Seller can cancel if auction is active and has no bids (doesn't matter if ended or not)
-  const canCancel = isSeller && auction.status === AuctionStatus.Active && auction.totalBids === BigInt(0);
+  const showSettlementFlow = isSeller && hasEnded && auction.totalBids > BigInt(0) && statusNum !== AuctionStatus.Settled && statusNum !== AuctionStatus.Cancelled;
+  const canClaimRefund = (statusNum === AuctionStatus.Settled || statusNum === AuctionStatus.Cancelled) && userHasBid && !userHasRefunded && !isWinner;
+  const canCancel = isSeller && statusNum === AuctionStatus.Active && auction.totalBids === BigInt(0);
+
+  // Settlement button logic
+  const getSettlementButtonText = () => {
+    if (isLoading) return "Processing...";
+    if (settlementCompleted) return "Settlement Complete!";
+
+    switch (settlementStep) {
+      case "request":
+        return "Request Settlement";
+      case "waiting":
+        return "Waiting for Decryption...";
+      case "finalize":
+        return "Finalize Settlement";
+    }
+  };
+
+  const isSettlementButtonDisabled = () => {
+    if (isLoading || settlementCompleted) return true;
+    if (settlementStep === "waiting") return true;
+    return false;
+  };
+
+  const handleSettlementClick = () => {
+    if (settlementStep === "request") {
+      handleRequestSettlement();
+    } else if (settlementStep === "finalize") {
+      handleFinalizeSettlement();
+    }
+  };
 
   return (
     <>
@@ -247,49 +300,129 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
             </div>
           </div>
 
-          {/* Settlement In Progress (SettlementRequested status) */}
-          {isSettlementRequested && auction.status !== AuctionStatus.Settled && (
-            <div className="bg-info/10 border border-info/30 p-4 mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  {isPollingDecryption ? (
-                    <Loader2 className="w-5 h-5 text-info animate-spin" />
-                  ) : decryptionReady ? (
-                    <Trophy className="w-5 h-5 text-success" />
-                  ) : (
-                    <Clock className="w-5 h-5 text-info" />
-                  )}
-                  <p className="text-sm font-display font-bold text-info uppercase tracking-wide">
-                    Settlement In Progress
+          {/* Settlement Progress (for seller during settlement flow) */}
+          {showSettlementFlow && (
+            <div className="space-y-3 mb-6">
+              <label className="text-sm font-pixel text-base-content/60 uppercase tracking-widest">
+                Settlement Progress
+              </label>
+              <div className="relative flex items-center justify-between px-4">
+                {/* Connector Lines */}
+                <div className="absolute top-4 left-[calc(25%)] right-[calc(25%)] h-0.5 bg-base-300">
+                  <div
+                    className={`absolute left-0 h-full transition-all duration-300 ${
+                      settlementStep !== "request" ? "w-1/2 bg-green-500" : "w-0"
+                    }`}
+                  />
+                  <div
+                    className={`absolute left-1/2 h-full transition-all duration-300 ${
+                      settlementStep === "finalize" || settlementCompleted
+                        ? "w-1/2 bg-green-500"
+                        : settlementStep === "waiting"
+                          ? "w-1/4 bg-yellow-500"
+                          : "w-0"
+                    }`}
+                  />
+                </div>
+
+                {/* Step 1 - Request */}
+                <div className="flex flex-col items-center gap-2 z-10">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                      settlementStep === "request" && !settlementCompleted
+                        ? "bg-primary text-primary-content ring-4 ring-primary/20"
+                        : "bg-green-500 text-white"
+                    }`}
+                  >
+                    {settlementStep === "request" && !settlementCompleted ? (
+                      <span className="text-xs font-bold">1</span>
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4" />
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium ${
+                    settlementStep === "request" && !settlementCompleted ? "text-primary" : "text-green-600"
+                  }`}>Request</span>
+                </div>
+
+                {/* Step 2 - Decrypt */}
+                <div className="flex flex-col items-center gap-2 z-10">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                      settlementStep === "waiting"
+                        ? "bg-yellow-500 text-white ring-4 ring-yellow-500/20"
+                        : settlementStep === "finalize" || settlementCompleted
+                          ? "bg-green-500 text-white"
+                          : "bg-base-300 text-base-content/40"
+                    }`}
+                  >
+                    {settlementStep === "waiting" ? (
+                      <Clock className="w-4 h-4 animate-pulse" />
+                    ) : settlementStep === "finalize" || settlementCompleted ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <span className="text-xs font-bold">2</span>
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium ${
+                    settlementStep === "waiting"
+                      ? "text-yellow-600"
+                      : settlementStep === "finalize" || settlementCompleted
+                        ? "text-green-600"
+                        : "text-base-content/60"
+                  }`}>Decrypt</span>
+                </div>
+
+                {/* Step 3 - Finalize */}
+                <div className="flex flex-col items-center gap-2 z-10">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                      settlementCompleted
+                        ? "bg-green-500 text-white"
+                        : settlementStep === "finalize"
+                          ? "bg-primary text-primary-content ring-4 ring-primary/20"
+                          : "bg-base-300 text-base-content/40"
+                    }`}
+                  >
+                    {settlementCompleted ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <span className="text-xs font-bold">3</span>
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium ${
+                    settlementCompleted
+                      ? "text-green-600"
+                      : settlementStep === "finalize"
+                        ? "text-primary"
+                        : "text-base-content/60"
+                  }`}>Finalize</span>
+                </div>
+              </div>
+
+              {/* Waiting message */}
+              {settlementStep === "waiting" && (
+                <div className="flex items-center gap-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-sm">
+                  <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
+                  <span className="text-xs text-yellow-500">
+                    Waiting for FHE decryption... This may take a few moments.
+                  </span>
+                </div>
+              )}
+
+              {/* Ready to finalize */}
+              {settlementStep === "finalize" && !settlementCompleted && (
+                <div className="p-2 bg-green-500/10 border border-green-500/30 rounded-sm">
+                  <p className="text-xs text-green-500">
+                    Decryption complete! Click &quot;Finalize Settlement&quot; to transfer the NFT to the winner.
                   </p>
                 </div>
-                {!decryptionReady && (
-                  <button
-                    onClick={handleCheckDecryption}
-                    className="btn btn-ghost btn-xs"
-                    title="Check decryption status"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              <div className="text-sm">
-                {decryptionReady ? (
-                  <p className="text-success">
-                    Decryption complete! Winner and amount are ready. Click &quot;Finalize Settlement&quot; to complete.
-                  </p>
-                ) : (
-                  <p className="text-base-content/70">
-                    Waiting for FHE decryption of winner and bid amount...
-                    {isPollingDecryption && <span className="ml-1">(checking every 3s)</span>}
-                  </p>
-                )}
-              </div>
+              )}
             </div>
           )}
 
           {/* Settlement Result (if settled) */}
-          {auction.status === AuctionStatus.Settled && settlementResult && (
+          {statusNum === AuctionStatus.Settled && settlementResult && (
             <div className="bg-success/10 border border-success/30 p-4 mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Trophy className="w-5 h-5 text-success" />
@@ -348,25 +481,14 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
                     Place Bid
                   </button>
                 )}
-                {canRequestSettlement && (
+                {showSettlementFlow && (
                   <button
-                    onClick={handleRequestSettlement}
-                    disabled={isLoading}
+                    onClick={handleSettlementClick}
+                    disabled={isSettlementButtonDisabled()}
                     className="btn btn-primary font-display uppercase tracking-wide"
                   >
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    Request Settlement
-                  </button>
-                )}
-                {canFinalizeSettlement && (
-                  <button
-                    onClick={handleFinalizeSettlement}
-                    disabled={isLoading || !decryptionReady}
-                    className="btn btn-primary font-display uppercase tracking-wide"
-                    title={!decryptionReady ? "Waiting for decryption to complete" : ""}
-                  >
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                    {decryptionReady ? "Finalize Settlement" : "Waiting for Decryption..."}
+                    {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {getSettlementButtonText()}
                   </button>
                 )}
                 {canClaimRefund && (
