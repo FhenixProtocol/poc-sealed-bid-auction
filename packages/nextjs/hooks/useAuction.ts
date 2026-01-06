@@ -218,8 +218,76 @@ export function useAuction() {
   // ============ Write Functions ============
 
   /**
-   * Create a new auction
-   * First approves the NFT, then creates the auction
+   * Check if NFT is approved for the auction contract
+   */
+  const isNftApproved = useCallback(
+    async (nftContract: `0x${string}`, tokenId: bigint): Promise<boolean> => {
+      if (!publicClient) {
+        console.error("Public client not available");
+        return false;
+      }
+
+      try {
+        const approved = await publicClient.readContract({
+          address: nftContract,
+          abi: auctionNftAbi,
+          functionName: "getApproved",
+          args: [tokenId],
+        });
+
+        return (approved as string).toLowerCase() === AUCTION_CONTRACT_ADDRESS.toLowerCase();
+      } catch (error) {
+        console.error("Failed to check NFT approval:", error);
+        return false;
+      }
+    },
+    [publicClient]
+  );
+
+  /**
+   * Approve NFT for the auction contract
+   */
+  const approveNft = useCallback(
+    async (nftContract: `0x${string}`, tokenId: bigint): Promise<boolean> => {
+      if (!walletClient || !address || !publicClient) {
+        toast.error("Wallet not connected");
+        return false;
+      }
+
+      setIsLoading(true);
+
+      try {
+        toast.loading("Approving NFT transfer...", { id: "approve-nft" });
+
+        const approveHash = await walletClient.writeContract({
+          address: nftContract,
+          abi: auctionNftAbi,
+          functionName: "approve",
+          args: [AUCTION_CONTRACT_ADDRESS, tokenId],
+        });
+
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
+        if (receipt.status !== "success") {
+          toast.error("NFT approval failed", { id: "approve-nft" });
+          return false;
+        }
+
+        toast.success("NFT approved!", { id: "approve-nft" });
+        return true;
+      } catch (error) {
+        console.error("Failed to approve NFT:", error);
+        toast.error("Failed to approve NFT", { id: "approve-nft" });
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [walletClient, address, publicClient]
+  );
+
+  /**
+   * Create a new auction (NFT must be approved first)
    */
   const createAuction = useCallback(
     async (
@@ -237,20 +305,6 @@ export function useAuction() {
       setIsLoading(true);
 
       try {
-        // First, approve the NFT transfer to the auction contract
-        toast.loading("Approving NFT transfer...", { id: "approve-nft" });
-
-        const approveHash = await walletClient.writeContract({
-          address: nftContract,
-          abi: auctionNftAbi,
-          functionName: "approve",
-          args: [AUCTION_CONTRACT_ADDRESS, tokenId],
-        });
-
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        toast.success("NFT approved!", { id: "approve-nft" });
-
-        // Now create the auction
         toast.loading("Creating auction...", { id: "create-auction" });
 
         const createHash = await walletClient.writeContract({
@@ -261,6 +315,11 @@ export function useAuction() {
         });
 
         const receipt = await publicClient.waitForTransactionReceipt({ hash: createHash });
+
+        if (receipt.status !== "success") {
+          toast.error("Auction creation failed on chain", { id: "create-auction" });
+          return null;
+        }
 
         // Parse the AuctionCreated event using viem's type-safe event parsing
         const events = parseEventLogs({
@@ -277,7 +336,6 @@ export function useAuction() {
       } catch (error) {
         console.error("Failed to create auction:", error);
         toast.error("Failed to create auction", { id: "create-auction" });
-        toast.dismiss("approve-nft");
         return null;
       } finally {
         setIsLoading(false);
@@ -567,8 +625,10 @@ export function useAuction() {
     hasBidOnAuction,
     hasClaimedRefund,
     getSettlementResult,
+    isNftApproved,
 
     // Write functions
+    approveNft,
     createAuction,
     placeBid,
     requestSettlement,

@@ -8,8 +8,9 @@ import {
   AuctionData,
   AuctionStatus,
   SettlementResult,
-  getStatusColor,
-  getStatusLabel,
+  getEffectiveStatus,
+  getEffectiveStatusColor,
+  getEffectiveStatusLabel,
 } from "@/utils/auctionContracts";
 import { PlaceBidModal } from "./PlaceBidModal";
 
@@ -51,6 +52,7 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
     requestSettlement,
     finalizeSettlement,
     claimRefund,
+    cancelAuction,
     isLoading,
   } = useAuction();
 
@@ -64,7 +66,8 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
   const now = BigInt(Math.floor(Date.now() / 1000));
   const hasStarted = now >= auction.startTime;
   const hasEnded = now >= auction.endTime;
-  const isActive = auction.status === AuctionStatus.Active && hasStarted && !hasEnded;
+  const effectiveStatus = getEffectiveStatus(auction);
+  const isActive = effectiveStatus === AuctionStatus.Active && hasStarted && !hasEnded;
 
   // Fetch user status and settlement result
   useEffect(() => {
@@ -123,6 +126,13 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
     }
   };
 
+  const handleCancelAuction = async () => {
+    const success = await cancelAuction(auction.id);
+    if (success) {
+      onClose();
+    }
+  };
+
   if (!isOpen) return null;
 
   const isWinner = settlementResult?.winner.toLowerCase() === address?.toLowerCase();
@@ -131,6 +141,8 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
   const canFinalizeSettlement = isSeller && auction.status === AuctionStatus.SettlementRequested;
   const canClaimRefund = (auction.status === AuctionStatus.Settled || auction.status === AuctionStatus.Cancelled)
     && userHasBid && !userHasRefunded && !isWinner;
+  // Seller can cancel if auction is active and has no bids (doesn't matter if ended or not)
+  const canCancel = isSeller && auction.status === AuctionStatus.Active && auction.totalBids === BigInt(0);
 
   return (
     <>
@@ -146,8 +158,8 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
                 <h3 className="text-xl font-display font-bold text-base-content uppercase tracking-wide">
                   Auction #{auction.id.toString()}
                 </h3>
-                <span className={`badge ${getStatusColor(auction.status)} badge-sm font-display uppercase tracking-wide mt-1`}>
-                  {getStatusLabel(auction.status)}
+                <span className={`badge ${getEffectiveStatusColor(auction)} badge-sm font-display uppercase tracking-wide mt-1`}>
+                  {getEffectiveStatusLabel(auction)}
                 </span>
               </div>
             </div>
@@ -286,6 +298,16 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
                   >
                     {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                     Claim Refund
+                  </button>
+                )}
+                {canCancel && (
+                  <button
+                    onClick={handleCancelAuction}
+                    disabled={isLoading}
+                    className="btn btn-error font-display uppercase tracking-wide"
+                  >
+                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Cancel Auction
                   </button>
                 )}
               </>

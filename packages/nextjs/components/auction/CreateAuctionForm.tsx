@@ -1,39 +1,88 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { Plus, Calendar, Clock, Loader2 } from "lucide-react";
+import { Plus, Clock, Loader2, Check, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuction } from "@/hooks/useAuction";
 import { NFTSelector } from "./NFTSelector";
 
+// Duration options in seconds
+const DURATION_OPTIONS = [
+  { label: "5 minutes", value: 5 * 60 },
+  { label: "10 minutes", value: 10 * 60 },
+  { label: "1 hour", value: 60 * 60 },
+  { label: "1 day", value: 24 * 60 * 60 },
+];
+
 /**
  * Form component for creating new auctions
- * Simplified: uses fixed token from env, only requires NFT contract, token ID, and timing
+ * 2-step process: 1) Approve NFT, 2) Create Auction
  */
 export const CreateAuctionForm = () => {
   const { address } = useAccount();
-  const { createAuction, nftContractAddress, tokenContractAddress, isLoading } = useAuction();
+  const { createAuction, approveNft, isNftApproved, nftContractAddress, tokenContractAddress, isLoading } = useAuction();
 
-  // Form state - simplified (uses NFTSelector for token selection)
+  // Form state
   const [selectedTokenId, setSelectedTokenId] = useState<bigint | null>(null);
-  const [startDate, setStartDate] = useState<string>("");
-  const [startTime, setStartTime] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
-  const [endTime, setEndTime] = useState<string>("");
+  const [selectedDuration, setSelectedDuration] = useState<number>(DURATION_OPTIONS[0].value);
+
+  // Approval state
+  const [isApproved, setIsApproved] = useState(false);
+  const [isCheckingApproval, setIsCheckingApproval] = useState(false);
 
   const isWalletConnected = !!address;
+
+  // Check approval status when NFT is selected
+  useEffect(() => {
+    const checkApproval = async () => {
+      if (selectedTokenId === null || !nftContractAddress) {
+        setIsApproved(false);
+        return;
+      }
+
+      setIsCheckingApproval(true);
+      const approved = await isNftApproved(nftContractAddress as `0x${string}`, selectedTokenId);
+      setIsApproved(approved);
+      setIsCheckingApproval(false);
+    };
+
+    checkApproval();
+  }, [selectedTokenId, nftContractAddress, isNftApproved]);
 
   /**
    * Reset all form fields to initial values
    */
   const resetForm = useCallback(() => {
     setSelectedTokenId(null);
-    setStartDate("");
-    setStartTime("");
-    setEndDate("");
-    setEndTime("");
+    setSelectedDuration(DURATION_OPTIONS[0].value);
+    setIsApproved(false);
   }, []);
+
+  /**
+   * Handle NFT approval (Step 1)
+   */
+  const handleApprove = async () => {
+    if (!isWalletConnected) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (selectedTokenId === null) {
+      toast.error("Please select an NFT");
+      return;
+    }
+
+    if (!nftContractAddress) {
+      toast.error("NFT contract not configured");
+      return;
+    }
+
+    const success = await approveNft(nftContractAddress as `0x${string}`, selectedTokenId);
+    if (success) {
+      setIsApproved(true);
+    }
+  };
 
   /**
    * Validate form inputs before submission
@@ -42,33 +91,6 @@ export const CreateAuctionForm = () => {
     // Check NFT is selected
     if (selectedTokenId === null) {
       toast.error("Please select an NFT");
-      return false;
-    }
-
-    if (!startDate || !startTime) {
-      toast.error("Start date and time are required");
-      return false;
-    }
-
-    if (!endDate || !endTime) {
-      toast.error("End date and time are required");
-      return false;
-    }
-
-    // Parse dates
-    const startDateTime = new Date(`${startDate}T${startTime}`);
-    const endDateTime = new Date(`${endDate}T${endTime}`);
-    const now = new Date();
-
-    // Validate start time is in the future
-    if (startDateTime <= now) {
-      toast.error("Start time must be in the future");
-      return false;
-    }
-
-    // Validate end time is after start time
-    if (endDateTime <= startDateTime) {
-      toast.error("End time must be after start time");
       return false;
     }
 
@@ -88,9 +110,9 @@ export const CreateAuctionForm = () => {
   };
 
   /**
-   * Handle form submission
+   * Handle auction creation (Step 2)
    */
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCreateAuction = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isWalletConnected) {
@@ -102,12 +124,18 @@ export const CreateAuctionForm = () => {
       return;
     }
 
-    // Convert dates to Unix timestamps
-    const startTimestamp = BigInt(Math.floor(new Date(`${startDate}T${startTime}`).getTime() / 1000));
-    const endTimestamp = BigInt(Math.floor(new Date(`${endDate}T${endTime}`).getTime() / 1000));
+    if (!isApproved) {
+      toast.error("Please approve the NFT first");
+      return;
+    }
+
+    // Start time is now + 30 seconds buffer (to account for tx mining time)
+    // End time is start time + duration
+    const now = Math.floor(Date.now() / 1000);
+    const startTimestamp = BigInt(now + 30); // 30 second buffer for tx to be mined
+    const endTimestamp = BigInt(now + 30 + selectedDuration);
 
     // Use the fixed addresses from environment
-    // selectedTokenId is guaranteed to be non-null here due to validateForm() check
     const result = await createAuction(
       nftContractAddress as `0x${string}`,
       selectedTokenId!,
@@ -120,6 +148,9 @@ export const CreateAuctionForm = () => {
       resetForm();
     }
   };
+
+  // Get selected duration label for display
+  const selectedDurationLabel = DURATION_OPTIONS.find(d => d.value === selectedDuration)?.label || "";
 
   return (
     <div className="bg-base-200 border border-base-300 p-6">
@@ -142,91 +173,119 @@ export const CreateAuctionForm = () => {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleCreateAuction} className="space-y-4">
         {/* NFT Selector */}
         <NFTSelector
           selectedTokenId={selectedTokenId}
-          onSelect={setSelectedTokenId}
+          onSelect={(tokenId) => {
+            setSelectedTokenId(tokenId);
+            setIsApproved(false); // Reset approval when NFT changes
+          }}
           disabled={!isWalletConnected || isLoading}
         />
 
-        {/* Start Date/Time */}
+        {/* Duration Selector */}
         <div className="form-control">
           <label className="label">
             <span className="label-text font-pixel uppercase tracking-widest text-xs flex items-center gap-2">
-              <Calendar className="w-3 h-3" />
-              Start Date & Time
+              <Clock className="w-3 h-3" />
+              Auction Duration
             </span>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={!isWalletConnected || isLoading}
-              className="input input-bordered font-mono text-sm"
-            />
-            <div className="relative">
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {DURATION_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setSelectedDuration(option.value)}
                 disabled={!isWalletConnected || isLoading}
-                className="input input-bordered font-mono text-sm w-full"
-              />
-              <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30 pointer-events-none" />
-            </div>
+                className={`btn btn-sm font-display uppercase tracking-wide ${
+                  selectedDuration === option.value
+                    ? "btn-primary"
+                    : "btn-outline"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-        </div>
-
-        {/* End Date/Time */}
-        <div className="form-control">
           <label className="label">
-            <span className="label-text font-pixel uppercase tracking-widest text-xs flex items-center gap-2">
-              <Calendar className="w-3 h-3" />
-              End Date & Time
+            <span className="label-text-alt text-base-content/50">
+              Auction starts immediately and ends in {selectedDurationLabel}
             </span>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={!isWalletConnected || isLoading}
-              className="input input-bordered font-mono text-sm"
-            />
-            <div className="relative">
-              <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                disabled={!isWalletConnected || isLoading}
-                className="input input-bordered font-mono text-sm w-full"
-              />
-              <Clock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-base-content/30 pointer-events-none" />
-            </div>
-          </div>
         </div>
 
-        {/* Submit Button */}
-        <div className="pt-4">
-          <button
-            type="submit"
-            disabled={!isWalletConnected || isLoading}
-            className="btn btn-primary w-full font-display uppercase tracking-wide"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Creating Auction...
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                Create Auction
-              </>
-            )}
-          </button>
+        {/* 2-Step Buttons */}
+        <div className="pt-4 space-y-3">
+          {/* Step 1: Approve NFT */}
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 font-bold text-sm ${
+              isApproved
+                ? "bg-success text-success-content border-success"
+                : "border-primary text-primary"
+            }`}>
+              {isApproved ? <Check className="w-4 h-4" /> : "1"}
+            </div>
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={!isWalletConnected || isLoading || selectedTokenId === null || isApproved || isCheckingApproval}
+              className={`btn flex-1 font-display uppercase tracking-wide ${
+                isApproved ? "btn-success btn-outline" : "btn-primary"
+              }`}
+            >
+              {isCheckingApproval ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Checking...
+                </>
+              ) : isLoading && !isApproved ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Approving...
+                </>
+              ) : isApproved ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  NFT Approved
+                </>
+              ) : (
+                <>
+                  <ChevronRight className="w-4 h-4" />
+                  Approve NFT
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Step 2: Create Auction */}
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full border-2 font-bold text-sm ${
+              isApproved
+                ? "border-primary text-primary"
+                : "border-base-300 text-base-content/30"
+            }`}>
+              2
+            </div>
+            <button
+              type="submit"
+              disabled={!isWalletConnected || isLoading || !isApproved}
+              className="btn btn-primary flex-1 font-display uppercase tracking-wide"
+            >
+              {isLoading && isApproved ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Creating Auction...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  Create Auction
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>

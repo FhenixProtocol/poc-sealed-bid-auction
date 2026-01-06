@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
+import { cofhejs, FheTypes } from "cofhejs/web";
 import toast from "react-hot-toast";
 import { auctionNftAbi, auctionTokenAbi } from "@/utils/auctionContracts";
 
@@ -40,7 +41,7 @@ export function useMint() {
   }, [publicClient, address]);
 
   /**
-   * Get user's token balance (plaintext)
+   * Get user's token balance (plaintext/public)
    */
   const getTokenBalance = useCallback(async (): Promise<bigint> => {
     if (!publicClient || !address) return BigInt(0);
@@ -58,6 +59,47 @@ export function useMint() {
       return BigInt(0);
     }
   }, [publicClient, address]);
+
+  /**
+   * Get user's encrypted/confidential token balance
+   * Returns the ctHash that needs to be unsealed with a permit
+   */
+  const getEncryptedTokenBalanceHash = useCallback(async (): Promise<bigint> => {
+    if (!publicClient || !address) return BigInt(0);
+
+    try {
+      const ctHash = await publicClient.readContract({
+        address: TOKEN_CONTRACT_ADDRESS,
+        abi: auctionTokenAbi,
+        functionName: "confidentialBalanceOf",
+        args: [address],
+      });
+      return ctHash as bigint;
+    } catch (error) {
+      console.error("Failed to get encrypted token balance hash:", error);
+      return BigInt(0);
+    }
+  }, [publicClient, address]);
+
+  /**
+   * Unseal the encrypted token balance using cofhejs
+   * Requires a valid permit to be created first
+   */
+  const unsealTokenBalance = useCallback(async (ctHash: bigint): Promise<bigint | null> => {
+    if (!ctHash || ctHash === BigInt(0)) return BigInt(0);
+
+    try {
+      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
+
+      if (result?.success && result?.data !== undefined) {
+        return BigInt(result.data.toString());
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to unseal token balance:", error);
+      return null;
+    }
+  }, []);
 
   /**
    * Mint 1 NFT to the connected user
@@ -133,6 +175,8 @@ export function useMint() {
     tokenContractAddress: TOKEN_CONTRACT_ADDRESS,
     getNftBalance,
     getTokenBalance,
+    getEncryptedTokenBalanceHash,
+    unsealTokenBalance,
     mintNft,
     mintTokens,
   };

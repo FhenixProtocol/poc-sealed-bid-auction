@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Gavel, Lock, X, Loader2 } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Gavel, Lock, X, Loader2, Wallet, Unlock } from "lucide-react";
 import { useAuction } from "@/hooks/useAuction";
+import { useMint } from "@/hooks/useMint";
+import { useCofhe } from "@/hooks/useCofhe";
+import { usePermit } from "@/hooks/usePermit";
 import { AuctionData } from "@/utils/auctionContracts";
 
 interface PlaceBidModalProps {
@@ -17,13 +20,52 @@ interface PlaceBidModalProps {
  */
 export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) => {
   const { placeBid, isLoading } = useAuction();
+  const { getEncryptedTokenBalanceHash, unsealTokenBalance } = useMint();
+  const { isInitialized: isCofheInitialized } = useCofhe();
+  const { hasValidPermit, generatePermit, isGeneratingPermit } = usePermit();
+
   const [bidAmount, setBidAmount] = useState<string>("");
+  const [encryptedBalanceHash, setEncryptedBalanceHash] = useState<bigint>(BigInt(0));
+  const [unsealedBalance, setUnsealedBalance] = useState<bigint | null>(null);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+  const [isUnsealing, setIsUnsealing] = useState(false);
+
+  // Fetch encrypted balance hash when modal opens
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!isOpen) return;
+      setIsLoadingBalance(true);
+      const hash = await getEncryptedTokenBalanceHash();
+      setEncryptedBalanceHash(hash);
+      setIsLoadingBalance(false);
+    };
+    fetchBalance();
+  }, [isOpen, getEncryptedTokenBalanceHash]);
+
+  // Handle unsealing balance
+  const handleUnsealBalance = async () => {
+    if (!hasValidPermit) {
+      const result = await generatePermit();
+      if (!result.success) return;
+    }
+
+    setIsUnsealing(true);
+    const unsealed = await unsealTokenBalance(encryptedBalanceHash);
+    setUnsealedBalance(unsealed);
+    setIsUnsealing(false);
+  };
+
+  // Format balance for display (6 decimals)
+  const formattedBalance = unsealedBalance !== null
+    ? (Number(unsealedBalance) / 1_000_000).toLocaleString()
+    : null;
 
   /**
    * Reset form state and close modal
    */
   const handleClose = useCallback(() => {
     setBidAmount("");
+    setUnsealedBalance(null);
     onClose();
   }, [onClose]);
 
@@ -95,6 +137,41 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
           </h2>
         </div>
 
+        {/* Your Balance */}
+        <div className="bg-base-200 border border-base-300 p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-primary" />
+              <span className="text-xs font-pixel text-base-content/70 uppercase tracking-widest">
+                Your Balance
+              </span>
+            </div>
+            {isLoadingBalance ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                <span className="text-sm text-base-content/50">Loading...</span>
+              </div>
+            ) : unsealedBalance !== null ? (
+              <span className="text-lg font-mono text-base-content">
+                {formattedBalance} <span className="text-xs text-base-content/50">AUCT</span>
+              </span>
+            ) : (
+              <button
+                onClick={handleUnsealBalance}
+                disabled={!isCofheInitialized || isUnsealing || isGeneratingPermit || encryptedBalanceHash === BigInt(0)}
+                className="btn btn-xs btn-accent gap-1"
+              >
+                {isUnsealing || isGeneratingPermit ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Unlock className="w-3 h-3" />
+                )}
+                {encryptedBalanceHash === BigInt(0) ? "No Balance" : "View Balance"}
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Privacy notice */}
         <div className="bg-base-200 border border-base-300 p-4 mb-6">
           <div className="flex items-start gap-3">
@@ -120,16 +197,28 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
                 Bid Amount (Tokens)
               </span>
             </label>
-            <input
-              type="number"
-              placeholder="0.000000"
-              step="0.000001"
-              min="0"
-              value={bidAmount}
-              onChange={(e) => setBidAmount(e.target.value)}
-              disabled={isLoading}
-              className="input input-bordered font-mono text-sm w-full"
-            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="0.000000"
+                step="0.000001"
+                min="0"
+                value={bidAmount}
+                onChange={(e) => setBidAmount(e.target.value)}
+                disabled={isLoading}
+                className="input input-bordered font-mono text-sm flex-1"
+              />
+              {unsealedBalance !== null && unsealedBalance > BigInt(0) && (
+                <button
+                  type="button"
+                  onClick={() => setBidAmount((Number(unsealedBalance) / 1_000_000).toString())}
+                  disabled={isLoading}
+                  className="btn btn-outline btn-sm"
+                >
+                  Max
+                </button>
+              )}
+            </div>
             <label className="label">
               <span className="label-text-alt text-base-content/50">
                 Enter the amount you want to bid (6 decimal places)

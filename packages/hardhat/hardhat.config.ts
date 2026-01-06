@@ -1,6 +1,8 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-ethers";
+import "hardhat-deploy";
+import "hardhat-deploy-ethers";
 import "cofhe-hardhat-plugin";
 import * as dotenv from "dotenv";
 import "./tasks";
@@ -12,6 +14,11 @@ const config: HardhatUserConfig = {
     version: "0.8.25",
     settings: {
       evmVersion: "cancun",
+    },
+  },
+  namedAccounts: {
+    deployer: {
+      default: 0,
     },
   },
   defaultNetwork: "hardhat",

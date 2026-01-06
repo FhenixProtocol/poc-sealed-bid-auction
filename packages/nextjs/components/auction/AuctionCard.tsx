@@ -4,8 +4,9 @@ import { Clock, Users, Gavel } from "lucide-react";
 import {
   AuctionData,
   AuctionStatus,
-  getStatusColor,
-  getStatusLabel,
+  getEffectiveStatus,
+  getEffectiveStatusColor,
+  getEffectiveStatusLabel,
 } from "@/utils/auctionContracts";
 
 interface AuctionCardProps {
@@ -38,8 +39,9 @@ function getTimeDisplay(auction: AuctionData): { label: string; value: string } 
     };
   }
 
-  // Auction is active
-  if (now < endTime && auction.status === AuctionStatus.Active) {
+  // Auction is active (use effective status to account for time)
+  const effectiveStatus = getEffectiveStatus(auction);
+  if (now < endTime && effectiveStatus === AuctionStatus.Active) {
     const secondsUntilEnd = Number(endTime - now);
     return {
       label: "Ends in",
@@ -128,9 +130,9 @@ export const AuctionCard = ({
           </h3>
         </div>
         <span
-          className={`badge ${getStatusColor(auction.status)} badge-sm font-display uppercase tracking-wide`}
+          className={`badge ${getEffectiveStatusColor(auction)} badge-sm font-display uppercase tracking-wide`}
         >
-          {getStatusLabel(auction.status)}
+          {getEffectiveStatusLabel(auction)}
         </span>
       </div>
 

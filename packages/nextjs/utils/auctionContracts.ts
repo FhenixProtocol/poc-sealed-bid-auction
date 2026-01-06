@@ -82,6 +82,36 @@ export function getStatusColor(status: AuctionStatus): string {
   }
 }
 
+/**
+ * Get the effective status of an auction based on contract status AND current time
+ * The contract status only changes when someone calls a function, but we want to
+ * show "Ended" when the time has passed even if status is still "Active"
+ */
+export function getEffectiveStatus(auction: AuctionData): AuctionStatus {
+  const now = BigInt(Math.floor(Date.now() / 1000));
+
+  // If contract says it's Active but time has ended, show as Ended
+  if (auction.status === AuctionStatus.Active && now >= auction.endTime) {
+    return AuctionStatus.Ended;
+  }
+
+  return auction.status;
+}
+
+/**
+ * Get a human-readable label for an auction's effective status
+ */
+export function getEffectiveStatusLabel(auction: AuctionData): string {
+  return getStatusLabel(getEffectiveStatus(auction));
+}
+
+/**
+ * Get DaisyUI badge class for an auction's effective status
+ */
+export function getEffectiveStatusColor(auction: AuctionData): string {
+  return getStatusColor(getEffectiveStatus(auction));
+}
+
 // ============ Contract ABIs ============
 
 /**
