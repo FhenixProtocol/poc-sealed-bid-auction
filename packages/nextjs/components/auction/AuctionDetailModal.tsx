@@ -66,6 +66,8 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
   // Settlement polling state
   const [decryptionReady, setDecryptionReady] = useState(false);
   const [isPollingDecryption, setIsPollingDecryption] = useState(false);
+  // Track local settlement requested state (since auction prop may not update immediately)
+  const [localSettlementRequested, setLocalSettlementRequested] = useState(false);
 
   const isSeller = address?.toLowerCase() === auction.seller.toLowerCase();
   const now = BigInt(Math.floor(Date.now() / 1000));
@@ -108,7 +110,8 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
 
   // Poll for decryption readiness when settlement is requested
   useEffect(() => {
-    if (auction.status !== AuctionStatus.SettlementRequested || decryptionReady || !isOpen) {
+    const isSettlementInProgress = auction.status === AuctionStatus.SettlementRequested || localSettlementRequested;
+    if (!isSettlementInProgress || decryptionReady || !isOpen) {
       return;
     }
 
@@ -126,12 +129,13 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
       clearInterval(pollInterval);
       setIsPollingDecryption(false);
     };
-  }, [auction.id, auction.status, decryptionReady, isDecryptionReady, isOpen]);
+  }, [auction.id, auction.status, decryptionReady, isDecryptionReady, isOpen, localSettlementRequested]);
 
   const handleRequestSettlement = async () => {
     const success = await requestSettlement(auction.id);
     if (success) {
-      // Start polling for decryption
+      // Mark settlement as requested locally and start polling for decryption
+      setLocalSettlementRequested(true);
       setDecryptionReady(false);
     }
   };
@@ -165,10 +169,13 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
 
   if (!isOpen) return null;
 
+  // Consider settlement requested if either the contract says so OR we just requested it locally
+  const isSettlementRequested = auction.status === AuctionStatus.SettlementRequested || localSettlementRequested;
+
   const isWinner = settlementResult?.winner.toLowerCase() === address?.toLowerCase();
   const canPlaceBid = isActive && !isSeller && !userHasBid;
-  const canRequestSettlement = isSeller && auction.status === AuctionStatus.Active && hasEnded && auction.totalBids > BigInt(0);
-  const canFinalizeSettlement = isSeller && auction.status === AuctionStatus.SettlementRequested;
+  const canRequestSettlement = isSeller && auction.status === AuctionStatus.Active && !localSettlementRequested && hasEnded && auction.totalBids > BigInt(0);
+  const canFinalizeSettlement = isSeller && isSettlementRequested;
   const canClaimRefund = (auction.status === AuctionStatus.Settled || auction.status === AuctionStatus.Cancelled)
     && userHasBid && !userHasRefunded && !isWinner;
   // Seller can cancel if auction is active and has no bids (doesn't matter if ended or not)
@@ -241,7 +248,7 @@ export const AuctionDetailModal = ({ auction, isOpen, onClose }: AuctionDetailMo
           </div>
 
           {/* Settlement In Progress (SettlementRequested status) */}
-          {auction.status === AuctionStatus.SettlementRequested && (
+          {isSettlementRequested && auction.status !== AuctionStatus.Settled && (
             <div className="bg-info/10 border border-info/30 p-4 mb-6">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
