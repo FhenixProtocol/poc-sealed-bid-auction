@@ -493,10 +493,38 @@ export function useAuction() {
   );
 
   /**
+   * Check if decryption is ready for finalization
+   */
+  const isDecryptionReady = useCallback(
+    async (auctionId: bigint): Promise<boolean> => {
+      if (!publicClient) {
+        console.error("Public client not available");
+        return false;
+      }
+
+      try {
+        const result = await publicClient.readContract({
+          address: AUCTION_CONTRACT_ADDRESS,
+          abi: sealedBidAuctionAbi,
+          functionName: "isDecryptionReady",
+          args: [auctionId],
+        });
+
+        return result as boolean;
+      } catch (error) {
+        console.error("Failed to check decryption status:", error);
+        return false;
+      }
+    },
+    [publicClient]
+  );
+
+  /**
    * Finalize settlement after decryption is complete
+   * The contract retrieves decrypted winner/amount from the FHE system
    */
   const finalizeSettlement = useCallback(
-    async (auctionId: bigint, winner: `0x${string}`, amount: bigint): Promise<boolean> => {
+    async (auctionId: bigint): Promise<boolean> => {
       if (!walletClient || !address || !publicClient) {
         toast.error("Wallet not connected");
         return false;
@@ -511,7 +539,7 @@ export function useAuction() {
           address: AUCTION_CONTRACT_ADDRESS,
           abi: sealedBidAuctionAbi,
           functionName: "finalizeSettlement",
-          args: [auctionId, winner, amount],
+          args: [auctionId],
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
@@ -626,6 +654,7 @@ export function useAuction() {
     hasClaimedRefund,
     getSettlementResult,
     isNftApproved,
+    isDecryptionReady,
 
     // Write functions
     approveNft,

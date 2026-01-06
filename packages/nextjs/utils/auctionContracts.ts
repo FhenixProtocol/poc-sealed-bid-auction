@@ -214,14 +214,17 @@ export const sealedBidAuctionAbi = [
     type: "function",
   },
   {
-    inputs: [
-      { name: "auctionId", type: "uint256" },
-      { name: "winner", type: "address" },
-      { name: "amount", type: "uint64" },
-    ],
+    inputs: [{ name: "auctionId", type: "uint256" }],
     name: "finalizeSettlement",
     outputs: [],
     stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "auctionId", type: "uint256" }],
+    name: "isDecryptionReady",
+    outputs: [{ name: "ready", type: "bool" }],
+    stateMutability: "view",
     type: "function",
   },
   {

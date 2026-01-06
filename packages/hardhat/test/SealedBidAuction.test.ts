@@ -526,10 +526,11 @@ describe("SealedBidAuction", function () {
       // Request settlement first
       await sealedBidAuction.requestSettlement(auctionId);
 
-      // Finalize with decrypted values
-      await expect(
-        sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount)
-      )
+      // Advance time to allow mock FHE decryption to be ready (mock has 1-10 second delay)
+      await time.increase(15);
+
+      // Finalize - retrieves decrypted values from FHE system
+      await expect(sealedBidAuction.finalizeSettlement(auctionId))
         .to.emit(sealedBidAuction, "AuctionSettled")
         .withArgs(auctionId, winner.address, winningAmount);
     });
@@ -539,7 +540,8 @@ describe("SealedBidAuction", function () {
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       expect(await auctionNFT.ownerOf(tokenId)).to.equal(winner.address);
     });
@@ -549,7 +551,8 @@ describe("SealedBidAuction", function () {
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       const auction = await sealedBidAuction.getAuction(auctionId);
       expect(auction.status).to.equal(3); // Status.Settled
@@ -560,7 +563,8 @@ describe("SealedBidAuction", function () {
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       const result = await sealedBidAuction.getSettlementResult(auctionId);
       expect(result.winner).to.equal(winner.address);
@@ -573,7 +577,7 @@ describe("SealedBidAuction", function () {
 
       // Try to finalize without requesting first
       await expect(
-        sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount)
+        sealedBidAuction.finalizeSettlement(auctionId)
       ).to.be.revertedWithCustomError(sealedBidAuction, "SettlementNotRequested");
     });
 
@@ -582,22 +586,81 @@ describe("SealedBidAuction", function () {
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       // Try to finalize again
       await expect(
-        sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount)
+        sealedBidAuction.finalizeSettlement(auctionId)
       ).to.be.revertedWithCustomError(sealedBidAuction, "SettlementNotRequested");
+    });
+
+    it("should revert if decryption is not ready yet", async function () {
+      const { sealedBidAuction, auctionId } =
+        await createAuctionReadyForSettlementFixture();
+
+      await sealedBidAuction.requestSettlement(auctionId);
+
+      // In the mock environment, the decryption delay is (block.timestamp % 10) + 1 seconds
+      // We verify via isDecryptionReady (view call doesn't advance time)
+      // The mock has a minimum delay of 1 second, so immediately after requestSettlement
+      // the decryption should not be ready yet
+      const isReady = await sealedBidAuction.isDecryptionReady(auctionId);
+
+      // Note: Due to the way Hardhat advances block timestamps,
+      // a transaction call might advance time enough to make it ready.
+      // We test the view function which doesn't advance time.
+      // If not ready, test the revert; if ready (edge case), skip the revert test
+      if (!isReady) {
+        await expect(
+          sealedBidAuction.finalizeSettlement(auctionId)
+        ).to.be.revertedWithCustomError(sealedBidAuction, "DecryptionNotReady");
+      } else {
+        // Edge case: delay was very short and time advanced enough
+        // Just verify finalization works in this case
+        await sealedBidAuction.finalizeSettlement(auctionId);
+        const auction = await sealedBidAuction.getAuction(auctionId);
+        expect(auction.status).to.equal(3); // Settled
+      }
+    });
+  });
+
+  describe("isDecryptionReady", function () {
+    it("should return false if settlement not requested", async function () {
+      const { sealedBidAuction, auctionId } = await createAuctionWithBidFixture();
+
+      expect(await sealedBidAuction.isDecryptionReady(auctionId)).to.be.false;
+    });
+
+    it("should return false immediately after settlement is requested", async function () {
+      const { sealedBidAuction, auctionId } = await createAuctionReadyForSettlementFixture();
+
+      await sealedBidAuction.requestSettlement(auctionId);
+
+      // Mock FHE has a 1-10 second delay before decryption is ready
+      expect(await sealedBidAuction.isDecryptionReady(auctionId)).to.be.false;
+    });
+
+    it("should return true after decryption delay has passed", async function () {
+      const { sealedBidAuction, auctionId } = await createAuctionReadyForSettlementFixture();
+
+      await sealedBidAuction.requestSettlement(auctionId);
+
+      // Advance time past the mock FHE decryption delay
+      await time.increase(15);
+
+      expect(await sealedBidAuction.isDecryptionReady(auctionId)).to.be.true;
     });
   });
 
   describe("claimRefund", function () {
     it("should allow losing bidder to claim refund after settlement", async function () {
-      const { sealedBidAuction, auctionId, winner, winningAmount, loser } =
+      const { sealedBidAuction, auctionId, loser } =
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       await expect(sealedBidAuction.connect(loser).claimRefund(auctionId))
         .to.emit(sealedBidAuction, "RefundClaimed")
@@ -605,11 +668,12 @@ describe("SealedBidAuction", function () {
     });
 
     it("should mark refund as claimed", async function () {
-      const { sealedBidAuction, auctionId, winner, winningAmount, loser } =
+      const { sealedBidAuction, auctionId, loser } =
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       expect(await sealedBidAuction.hasClaimedRefund(auctionId, loser.address)).to.be.false;
 
@@ -628,11 +692,12 @@ describe("SealedBidAuction", function () {
     });
 
     it("should revert if winner tries to claim refund", async function () {
-      const { sealedBidAuction, auctionId, winner, winningAmount } =
+      const { sealedBidAuction, auctionId, winner } =
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       await expect(
         sealedBidAuction.connect(winner).claimRefund(auctionId)
@@ -640,11 +705,12 @@ describe("SealedBidAuction", function () {
     });
 
     it("should revert if already refunded", async function () {
-      const { sealedBidAuction, auctionId, winner, winningAmount, loser } =
+      const { sealedBidAuction, auctionId, loser } =
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       // Claim once
       await sealedBidAuction.connect(loser).claimRefund(auctionId);
@@ -656,11 +722,12 @@ describe("SealedBidAuction", function () {
     });
 
     it("should revert if caller never bid", async function () {
-      const { sealedBidAuction, auctionId, winner, winningAmount, bidder3 } =
+      const { sealedBidAuction, auctionId, bidder3 } =
         await createAuctionReadyForSettlementFixture();
 
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       await expect(
         sealedBidAuction.connect(bidder3).claimRefund(auctionId)
@@ -886,7 +953,8 @@ describe("SealedBidAuction", function () {
           await createAuctionReadyForSettlementFixture();
 
         await sealedBidAuction.requestSettlement(auctionId);
-        await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+        await time.increase(15);
+        await sealedBidAuction.finalizeSettlement(auctionId);
 
         const result = await sealedBidAuction.getSettlementResult(auctionId);
         expect(result.winner).to.equal(winner.address);
@@ -917,7 +985,7 @@ describe("SealedBidAuction", function () {
 
   describe("Full Auction Flow (E2E)", function () {
     it("should complete full auction lifecycle", async function () {
-      const { sealedBidAuction, auctionNFT, auctionToken, seller, bidder1, bidder2, auctionId, winner, winningAmount, loser, tokenId } =
+      const { sealedBidAuction, auctionNFT, auctionId, winner, winningAmount, loser, tokenId } =
         await createAuctionReadyForSettlementFixture();
 
       // Verify auction state after bids
@@ -930,8 +998,17 @@ describe("SealedBidAuction", function () {
       const afterRequest = await sealedBidAuction.getAuction(auctionId);
       expect(afterRequest.status).to.equal(2); // SettlementRequested
 
-      // Finalize settlement
-      await sealedBidAuction.finalizeSettlement(auctionId, winner.address, winningAmount);
+      // Check decryption is NOT ready immediately (mock has delay)
+      expect(await sealedBidAuction.isDecryptionReady(auctionId)).to.be.false;
+
+      // Advance time for mock FHE decryption delay
+      await time.increase(15);
+
+      // Check decryption is ready after delay
+      expect(await sealedBidAuction.isDecryptionReady(auctionId)).to.be.true;
+
+      // Finalize settlement - retrieves decrypted values from FHE system
+      await sealedBidAuction.finalizeSettlement(auctionId);
       const afterSettle = await sealedBidAuction.getAuction(auctionId);
       expect(afterSettle.status).to.equal(3); // Settled
 
@@ -957,7 +1034,8 @@ describe("SealedBidAuction", function () {
 
       // Request and finalize settlement
       await sealedBidAuction.requestSettlement(auctionId);
-      await sealedBidAuction.finalizeSettlement(auctionId, bidder1.address, bidAmount);
+      await time.increase(15);
+      await sealedBidAuction.finalizeSettlement(auctionId);
 
       // Verify single bidder wins
       expect(await auctionNFT.ownerOf(tokenId)).to.equal(bidder1.address);
