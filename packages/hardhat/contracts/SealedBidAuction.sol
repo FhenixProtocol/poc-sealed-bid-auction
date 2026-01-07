@@ -201,6 +201,9 @@ contract SealedBidAuction is IERC721Receiver {
         bidderDeposits[auctionId][msg.sender] = transferred;
         hasBid[auctionId][msg.sender] = true;
 
+        // Grant the bidder ACL permission to view their own bid amount
+        FHE.allow(transferred, msg.sender);
+
         // Compare and update winner using FHE operations
         // Use 'transferred' which has ACL permission for this contract
         ebool isHigher = FHE.gt(transferred, auction.highestBid);
@@ -441,5 +444,17 @@ contract SealedBidAuction is IERC721Receiver {
         (, bool amountDecrypted) = FHE.getDecryptResultSafe(auction.highestBid);
 
         return winnerDecrypted && amountDecrypted;
+    }
+
+    /// @notice Get the encrypted bid deposit for a bidder
+    /// @dev The bidder can unseal this value using their permit
+    /// @param auctionId The auction to query
+    /// @param bidder The bidder address
+    /// @return deposit The encrypted bid amount (ciphertext hash)
+    function getBidderDeposit(
+        uint256 auctionId,
+        address bidder
+    ) external view returns (euint64 deposit) {
+        return bidderDeposits[auctionId][bidder];
     }
 }

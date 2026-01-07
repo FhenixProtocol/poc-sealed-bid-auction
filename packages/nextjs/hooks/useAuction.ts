@@ -637,6 +637,34 @@ export function useAuction() {
     [walletClient, address, publicClient, triggerRefresh]
   );
 
+  /**
+   * Get the encrypted bid deposit hash for a bidder
+   * The bidder can then unseal this using their permit
+   */
+  const getBidderDeposit = useCallback(
+    async (auctionId: bigint, bidder: string): Promise<bigint | null> => {
+      if (!publicClient) {
+        console.error("Public client not available");
+        return null;
+      }
+
+      try {
+        const result = await publicClient.readContract({
+          address: AUCTION_CONTRACT_ADDRESS,
+          abi: sealedBidAuctionAbi,
+          functionName: "getBidderDeposit",
+          args: [auctionId, bidder as `0x${string}`],
+        });
+
+        return result as bigint;
+      } catch (error) {
+        console.error("Failed to get bidder deposit:", error);
+        return null;
+      }
+    },
+    [publicClient]
+  );
+
   return {
     // State
     isLoading,
@@ -655,6 +683,7 @@ export function useAuction() {
     getSettlementResult,
     isNftApproved,
     isDecryptionReady,
+    getBidderDeposit,
 
     // Write functions
     approveNft,

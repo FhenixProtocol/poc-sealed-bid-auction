@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
+import { cofhejs, FheTypes } from "cofhejs/web";
 import {
   ArrowLeft,
   Clock,
@@ -13,6 +14,8 @@ import {
   Trophy,
   Banknote,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { PlaceBidModal } from "./PlaceBidModal";
 import { useAuction } from "@/hooks/useAuction";
@@ -62,6 +65,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     requestSettlement,
     finalizeSettlement,
     isDecryptionReady,
+    getBidderDeposit,
     claimRefund,
     cancelAuction,
     isLoading,
@@ -78,6 +82,11 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   // Settlement flow state
   const [settlementStep, setSettlementStep] = useState<SettlementStep>("request");
   const [isPolling, setIsPolling] = useState(false);
+
+  // Bid amount state for the current user
+  const [userBidAmount, setUserBidAmount] = useState<bigint | null>(null);
+  const [isUnsealingBid, setIsUnsealingBid] = useState(false);
+  const [bidRevealed, setBidRevealed] = useState(false);
 
   /**
    * Load all auction data
@@ -209,6 +218,39 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const handleBidModalClose = () => {
     setShowBidModal(false);
     loadAuctionData();
+  };
+
+  /**
+   * Reveal the user's bid amount by unsealing the encrypted value
+   */
+  const handleRevealBid = async () => {
+    if (!address || !userHasBid) return;
+
+    setIsUnsealingBid(true);
+    try {
+      // Get the encrypted bid hash from the contract
+      const ctHash = await getBidderDeposit(auctionId, address);
+
+      if (!ctHash || ctHash === BigInt(0)) {
+        console.error("No bid deposit found");
+        setIsUnsealingBid(false);
+        return;
+      }
+
+      // Unseal the bid amount using the user's permit
+      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
+
+      if (result?.success && result?.data !== undefined) {
+        setUserBidAmount(BigInt(result.data.toString()));
+        setBidRevealed(true);
+      } else {
+        console.error("Failed to unseal bid amount");
+      }
+    } catch (error) {
+      console.error("Error revealing bid:", error);
+    } finally {
+      setIsUnsealingBid(false);
+    }
   };
 
   // Derived state
@@ -444,11 +486,41 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                 </span>
               </div>
               {userHasBid && (
-                <div className="flex items-center gap-2 text-success pt-2 border-t border-base-300">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-sm font-display uppercase tracking-wide">
-                    You have placed a bid
-                  </span>
+                <div className="pt-2 border-t border-base-300 space-y-2">
+                  <div className="flex items-center gap-2 text-success">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm font-display uppercase tracking-wide">
+                      You have placed a bid
+                    </span>
+                  </div>
+
+                  {/* Reveal bid amount */}
+                  {!bidRevealed ? (
+                    <button
+                      onClick={handleRevealBid}
+                      disabled={isUnsealingBid}
+                      className="btn btn-ghost btn-sm w-full gap-2 text-primary"
+                    >
+                      {isUnsealingBid ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                      {isUnsealingBid ? "Decrypting..." : "Reveal My Bid"}
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-between bg-primary/10 p-2 rounded-sm">
+                      <div className="flex items-center gap-2">
+                        <Banknote className="w-4 h-4 text-primary" />
+                        <span className="text-xs font-pixel text-base-content/50 uppercase">
+                          Your Bid:
+                        </span>
+                      </div>
+                      <span className="text-sm font-mono text-primary font-bold">
+                        {userBidAmount !== null ? formatTokenAmount(userBidAmount) : "?"} AUCT
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

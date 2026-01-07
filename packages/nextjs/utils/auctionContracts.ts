@@ -228,6 +228,16 @@ export const sealedBidAuctionAbi = [
     type: "function",
   },
   {
+    inputs: [
+      { name: "auctionId", type: "uint256" },
+      { name: "bidder", type: "address" },
+    ],
+    name: "getBidderDeposit",
+    outputs: [{ name: "deposit", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [{ name: "auctionId", type: "uint256" }],
     name: "claimRefund",
     outputs: [],
