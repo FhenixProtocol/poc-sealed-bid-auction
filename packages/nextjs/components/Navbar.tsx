@@ -1,41 +1,17 @@
 "use client";
 
-import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
+import { useAccount, useDisconnect } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Image from "next/image";
-import { Wallet, LogOut, Network, ChevronDown, Check, Gavel, Coins } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { Wallet, LogOut, Gavel, Coins } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
-import { useAuctionStore, MainTab } from "@/services/store/auctionStore";
+import { useAuctionStore } from "@/services/store/auctionStore";
 
 export const Navbar = () => {
-  const { isConnected, address, chain } = useAccount();
+  const { isConnected, address } = useAccount();
   const { disconnect } = useDisconnect();
   const { openConnectModal } = useConnectModal();
-  const { chains, switchChain } = useSwitchChain();
-  const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const { mainTab, setMainTab } = useAuctionStore();
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsNetworkDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleNetworkSwitch = (chainId: number) => {
-    switchChain({ chainId });
-    setIsNetworkDropdownOpen(false);
-  };
 
   return (
     <nav className="sticky top-0 z-50 bg-base-100/80 backdrop-blur-md border-b border-base-300">
@@ -93,68 +69,6 @@ export const Navbar = () => {
           <div className="flex items-center gap-3">
             {/* Theme Toggle */}
             <ThemeToggle />
-
-            {/* Network Selector */}
-            {isConnected && chain && (
-              <div className="relative" ref={dropdownRef}>
-                <button
-                  onClick={() =>
-                    setIsNetworkDropdownOpen(!isNetworkDropdownOpen)
-                  }
-                  className="flex items-center gap-2 px-3 py-2 bg-base-200 border border-base-300 hover:border-primary rounded-sm transition-all group"
-                >
-                  <Network className="w-4 h-4 text-primary" />
-                  <span className="text-base-content text-sm font-medium hidden sm:inline">
-                    {chain.name}
-                  </span>
-                  <ChevronDown
-                    className={`w-4 h-4 text-base-content/50 transition-transform ${
-                      isNetworkDropdownOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                </button>
-
-                {/* Network Dropdown */}
-                {isNetworkDropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-base-100 border border-base-300 rounded-sm shadow-2xl overflow-hidden">
-                    <div className="p-2 border-b border-base-300 bg-base-200">
-                      <p className="text-sm font-pixel text-base-content/50 uppercase tracking-widest">
-                        {"// Select Network"}
-                      </p>
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {chains.map((availableChain) => (
-                        <button
-                          key={availableChain.id}
-                          onClick={() => handleNetworkSwitch(availableChain.id)}
-                          className={`w-full flex items-center justify-between px-4 py-3 hover:bg-base-200 transition-colors ${
-                            chain.id === availableChain.id
-                              ? "bg-primary/10"
-                              : ""
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`w-2 h-2 rounded-full ${
-                                chain.id === availableChain.id
-                                  ? "bg-primary"
-                                  : "bg-base-content/30"
-                              }`}
-                            />
-                            <span className="text-base-content text-sm font-medium">
-                              {availableChain.name}
-                            </span>
-                          </div>
-                          {chain.id === availableChain.id && (
-                            <Check className="w-4 h-4 text-primary" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* Wallet Connection */}
             {isConnected && address ? (
