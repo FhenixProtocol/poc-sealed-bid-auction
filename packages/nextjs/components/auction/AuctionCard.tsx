@@ -5,15 +5,18 @@ import { Clock, Users, Gavel } from "lucide-react";
 import {
   AuctionData,
   AuctionStatus,
+  SettlementResult,
   getEffectiveStatus,
   getEffectiveStatusColor,
   getEffectiveStatusLabel,
+  getAuctionName,
 } from "@/utils/auctionContracts";
 
 interface AuctionCardProps {
   auction: AuctionData;
   onClick?: () => void;
   showActions?: boolean;
+  settlementResult?: SettlementResult | null;
 }
 
 /**
@@ -107,6 +110,7 @@ export const AuctionCard = ({
   auction,
   onClick,
   showActions = false,
+  settlementResult,
 }: AuctionCardProps) => {
   // Force re-render every second to update time display and status
   const [, setTick] = useState(0);
@@ -140,9 +144,16 @@ export const AuctionCard = ({
           <div className="p-2 bg-primary/10 border border-primary/30">
             <Gavel className="w-5 h-5 text-primary" />
           </div>
-          <h3 className="text-lg font-display font-bold text-base-content uppercase tracking-wide">
-            Auction #{auction.id.toString()}
-          </h3>
+          <div className="flex flex-col">
+            <h3 className="text-lg font-display font-bold text-base-content uppercase tracking-wide">
+              {getAuctionName(auction.id) || `Auction #${auction.id.toString()}`}
+            </h3>
+            {getAuctionName(auction.id) && (
+              <span className="text-xs text-base-content/50 font-mono">
+                #{auction.id.toString()}
+              </span>
+            )}
+          </div>
         </div>
         <span
           className={`badge ${getEffectiveStatusColor(auction)} badge-sm font-display uppercase tracking-wide`}
@@ -202,6 +213,20 @@ export const AuctionCard = ({
           </span>
         </div>
       </div>
+
+      {/* Winner (shown only for settled auctions) */}
+      {auction.status === AuctionStatus.Settled && settlementResult && (
+        <div className="pt-3 border-t border-base-300">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-pixel text-success uppercase tracking-widest">
+              Winner:
+            </span>
+            <span className="text-sm font-mono text-success">
+              {truncateAddress(settlementResult.winner)}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       {showActions && (

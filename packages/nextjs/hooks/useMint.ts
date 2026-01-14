@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { cofhejs, FheTypes } from "cofhejs/web";
 import toast from "react-hot-toast";
 import { auctionNftAbi, auctionTokenAbi } from "@/utils/auctionContracts";
+import { toastTxSuccess } from "@/utils/explorerLink";
 
 const NFT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NFT_CONTRACT_ADDRESS as `0x${string}`;
 const TOKEN_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_TOKEN_CONTRACT_ADDRESS as `0x${string}`;
@@ -124,7 +125,7 @@ export function useMint() {
 
       await publicClient.waitForTransactionReceipt({ hash });
 
-      toast.success("NFT minted successfully!", { id: "mint-nft" });
+      toastTxSuccess("NFT minted successfully!", hash, "mint-nft");
       return true;
     } catch (error) {
       console.error("Failed to mint NFT:", error);
@@ -158,7 +159,7 @@ export function useMint() {
 
       await publicClient.waitForTransactionReceipt({ hash });
 
-      toast.success("1000 tokens minted successfully!", { id: "mint-tokens" });
+      toastTxSuccess("1000 tokens minted successfully!", hash, "mint-tokens");
       return true;
     } catch (error) {
       console.error("Failed to mint tokens:", error);

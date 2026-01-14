@@ -112,6 +112,29 @@ export function getEffectiveStatusColor(auction: AuctionData): string {
   return getStatusColor(getEffectiveStatus(auction));
 }
 
+/**
+ * Get the custom name for an auction from localStorage
+ * Returns null if no name was set
+ */
+export function getAuctionName(auctionId: bigint): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const auctionNames = JSON.parse(localStorage.getItem("auctionNames") || "{}");
+    return auctionNames[auctionId.toString()] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the display title for an auction
+ * Uses custom name if set, otherwise falls back to "Auction #ID"
+ */
+export function getAuctionDisplayTitle(auction: AuctionData): string {
+  const customName = getAuctionName(auction.id);
+  return customName || `Auction #${auction.id.toString()}`;
+}
+
 // ============ Contract ABIs ============
 
 /**

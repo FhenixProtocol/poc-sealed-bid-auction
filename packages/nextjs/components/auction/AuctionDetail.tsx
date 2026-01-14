@@ -15,6 +15,7 @@ import {
   Banknote,
   RefreshCw,
   Eye,
+  ExternalLink,
 } from "lucide-react";
 import { PlaceBidModal } from "./PlaceBidModal";
 import { useAuction } from "@/hooks/useAuction";
@@ -25,7 +26,9 @@ import {
   getEffectiveStatus,
   getEffectiveStatusColor,
   getEffectiveStatusLabel,
+  getAuctionName,
 } from "@/utils/auctionContracts";
+import { getExplorerTxUrl } from "@/utils/explorerLink";
 
 interface AuctionDetailProps {
   auctionId: bigint;
@@ -48,6 +51,20 @@ function formatTokenAmount(amount: bigint): string {
   const fractionalPart = amount % divisor;
   const fractionalStr = fractionalPart.toString().padStart(6, "0");
   return `${integerPart}.${fractionalStr}`;
+}
+
+/**
+ * Get bid transaction hash from localStorage
+ */
+function getBidTxHash(auctionId: bigint, bidder: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const bidTxHashes = JSON.parse(localStorage.getItem("bidTxHashes") || "{}");
+    const key = `${auctionId.toString()}-${bidder.toLowerCase()}`;
+    return bidTxHashes[key] || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -352,9 +369,16 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
             <div className="p-2 bg-primary/10 border border-primary/30">
               <Gavel className="w-5 h-5 text-primary" />
             </div>
-            <h2 className="text-xl font-display font-bold text-base-content uppercase tracking-wide">
-              Auction #{auctionId.toString()}
-            </h2>
+            <div className="flex flex-col">
+              <h2 className="text-xl font-display font-bold text-base-content uppercase tracking-wide">
+                {getAuctionName(auctionId) || `Auction #${auctionId.toString()}`}
+              </h2>
+              {getAuctionName(auctionId) && (
+                <span className="text-xs text-base-content/50 font-mono">
+                  #{auctionId.toString()}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -510,6 +534,19 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                       You have placed a bid
                     </span>
                   </div>
+
+                  {/* View bid on block explorer */}
+                  {address && getBidTxHash(auctionId, address) && (
+                    <a
+                      href={getExplorerTxUrl(getBidTxHash(auctionId, address)!)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-xs text-primary hover:underline"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      View encrypted bid on Arbiscan
+                    </a>
+                  )}
 
                   {/* Reveal bid amount */}
                   {!bidRevealed ? (

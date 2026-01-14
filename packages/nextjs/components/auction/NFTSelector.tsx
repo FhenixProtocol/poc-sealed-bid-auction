@@ -2,8 +2,9 @@
 
 import { useEffect } from "react";
 import { useAccount } from "wagmi";
-import { ImageIcon, Loader2, AlertCircle } from "lucide-react";
+import { ImageIcon, Loader2, AlertCircle, ArrowRight } from "lucide-react";
 import { useNFTOwnership } from "@/hooks/useNFTOwnership";
+import { useAuctionStore } from "@/services/store/auctionStore";
 
 interface NFTSelectorProps {
   selectedTokenId: bigint | null;
@@ -14,6 +15,7 @@ interface NFTSelectorProps {
 export const NFTSelector = ({ selectedTokenId, onSelect, disabled }: NFTSelectorProps) => {
   const { address } = useAccount();
   const { ownedTokenIds, isLoading, fetchOwnedNFTs } = useNFTOwnership();
+  const { setMainTab } = useAuctionStore();
 
   useEffect(() => {
     if (address) {
@@ -56,11 +58,20 @@ export const NFTSelector = ({ selectedTokenId, onSelect, disabled }: NFTSelector
             Select NFT
           </span>
         </label>
-        <div className="alert alert-warning">
-          <AlertCircle className="w-4 h-4" />
-          <span className="text-sm">
-            You don't own any NFTs. Go to the <strong>Mint</strong> tab to mint some!
-          </span>
+        <div className="alert alert-warning flex-col items-start gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm">
+              You don&apos;t own any NFTs. Go to the <strong>Mint</strong> tab to mint some!
+            </span>
+          </div>
+          <button
+            onClick={() => setMainTab("mint")}
+            className="btn btn-sm btn-primary gap-2 font-display uppercase tracking-wide"
+          >
+            Go to Mint
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
     );

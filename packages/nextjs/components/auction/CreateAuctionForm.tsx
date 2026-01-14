@@ -2,9 +2,10 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { Plus, Clock, Loader2, Check, ChevronRight } from "lucide-react";
+import { Plus, Clock, Loader2, Check, ChevronRight, PartyPopper, Eye, List, Tag } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuction } from "@/hooks/useAuction";
+import { useAuctionStore } from "@/services/store/auctionStore";
 import { NFTSelector } from "./NFTSelector";
 
 // Duration options in seconds
@@ -22,14 +23,20 @@ const DURATION_OPTIONS = [
 export const CreateAuctionForm = () => {
   const { address } = useAccount();
   const { createAuction, approveNft, isNftApproved, nftContractAddress, tokenContractAddress, isLoading } = useAuction();
+  const { setAuctionSubTab, setSelectedAuctionId } = useAuctionStore();
 
   // Form state
+  const [auctionName, setAuctionName] = useState<string>("");
   const [selectedTokenId, setSelectedTokenId] = useState<bigint | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<number>(DURATION_OPTIONS[0].value);
 
   // Approval state
   const [isApproved, setIsApproved] = useState(false);
   const [isCheckingApproval, setIsCheckingApproval] = useState(false);
+
+  // Success modal state
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [createdAuctionId, setCreatedAuctionId] = useState<bigint | null>(null);
 
   const isWalletConnected = !!address;
 
@@ -54,6 +61,7 @@ export const CreateAuctionForm = () => {
    * Reset all form fields to initial values
    */
   const resetForm = useCallback(() => {
+    setAuctionName("");
     setSelectedTokenId(null);
     setSelectedDuration(DURATION_OPTIONS[0].value);
     setIsApproved(false);
@@ -145,8 +153,34 @@ export const CreateAuctionForm = () => {
     );
 
     if (result !== null) {
+      // Save auction name to localStorage if provided
+      if (auctionName.trim()) {
+        const auctionNames = JSON.parse(localStorage.getItem("auctionNames") || "{}");
+        auctionNames[result.toString()] = auctionName.trim();
+        localStorage.setItem("auctionNames", JSON.stringify(auctionNames));
+      }
+      setCreatedAuctionId(result);
+      setShowSuccessModal(true);
       resetForm();
     }
+  };
+
+  /**
+   * Navigate to the created auction
+   */
+  const handleViewAuction = () => {
+    if (createdAuctionId !== null) {
+      setSelectedAuctionId(createdAuctionId);
+      setShowSuccessModal(false);
+    }
+  };
+
+  /**
+   * Navigate to My Auctions tab
+   */
+  const handleGoToMyAuctions = () => {
+    setAuctionSubTab("my-auctions");
+    setShowSuccessModal(false);
   };
 
   // Get selected duration label for display
@@ -174,6 +208,26 @@ export const CreateAuctionForm = () => {
       )}
 
       <form onSubmit={handleCreateAuction} className="space-y-4">
+        {/* Auction Name */}
+        <div className="form-control">
+          <label className="label">
+            <span className="label-text font-pixel uppercase tracking-widest text-xs flex items-center gap-2">
+              <Tag className="w-3 h-3" />
+              Auction Name
+            </span>
+            <span className="label-text-alt text-base-content/50">(Optional)</span>
+          </label>
+          <input
+            type="text"
+            placeholder="e.g., Rare Digital Art #42"
+            value={auctionName}
+            onChange={(e) => setAuctionName(e.target.value)}
+            disabled={!isWalletConnected || isLoading}
+            maxLength={50}
+            className="input input-bordered font-mono text-sm"
+          />
+        </div>
+
         {/* NFT Selector */}
         <NFTSelector
           selectedTokenId={selectedTokenId}
@@ -288,6 +342,47 @@ export const CreateAuctionForm = () => {
           </div>
         </div>
       </form>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-base-100 border border-base-300 p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 bg-success/10 border border-success/30 rounded-full mb-4">
+                <PartyPopper className="w-8 h-8 text-success" />
+              </div>
+              <h3 className="text-xl font-display font-bold text-base-content uppercase tracking-wide mb-2">
+                Auction Created!
+              </h3>
+              <p className="text-base-content/70 mb-6">
+                Your auction #{createdAuctionId?.toString()} has been created successfully and is now active.
+              </p>
+              <div className="flex flex-col w-full gap-3">
+                <button
+                  onClick={handleViewAuction}
+                  className="btn btn-primary w-full font-display uppercase tracking-wide gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Auction
+                </button>
+                <button
+                  onClick={handleGoToMyAuctions}
+                  className="btn btn-outline w-full font-display uppercase tracking-wide gap-2"
+                >
+                  <List className="w-4 h-4" />
+                  Go to My Auctions
+                </button>
+                <button
+                  onClick={() => setShowSuccessModal(false)}
+                  className="btn btn-ghost btn-sm w-full font-display uppercase tracking-wide"
+                >
+                  Create Another Auction
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

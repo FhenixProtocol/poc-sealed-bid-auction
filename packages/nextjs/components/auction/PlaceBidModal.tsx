@@ -1,12 +1,28 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useAccount } from "wagmi";
 import { Gavel, Lock, X, Loader2, Wallet, Unlock } from "lucide-react";
 import { useAuction } from "@/hooks/useAuction";
 import { useMint } from "@/hooks/useMint";
 import { useCofhe } from "@/hooks/useCofhe";
 import { usePermit } from "@/hooks/usePermit";
 import { AuctionData } from "@/utils/auctionContracts";
+
+/**
+ * Save bid transaction hash to localStorage
+ */
+function saveBidTxHash(auctionId: bigint, bidder: string, txHash: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const bidTxHashes = JSON.parse(localStorage.getItem("bidTxHashes") || "{}");
+    const key = `${auctionId.toString()}-${bidder.toLowerCase()}`;
+    bidTxHashes[key] = txHash;
+    localStorage.setItem("bidTxHashes", JSON.stringify(bidTxHashes));
+  } catch {
+    console.error("Failed to save bid tx hash to localStorage");
+  }
+}
 
 interface PlaceBidModalProps {
   auction: AuctionData;
@@ -19,6 +35,7 @@ interface PlaceBidModalProps {
  * Uses FHE (Fully Homomorphic Encryption) to encrypt bid amounts
  */
 export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) => {
+  const { address } = useAccount();
   const { placeBid, isLoading } = useAuction();
   const { getEncryptedTokenBalanceHash, unsealTokenBalance } = useMint();
   const { isInitialized: isCofheInitialized } = useCofhe();
@@ -88,16 +105,18 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!bidAmount || parseFloat(bidAmount) <= 0) {
+    if (!bidAmount || parseFloat(bidAmount) <= 0 || !address) {
       return;
     }
 
     // Convert to token units (6 decimals)
     const amountInTokenUnits = BigInt(Math.floor(parseFloat(bidAmount) * 1_000_000));
 
-    const success = await placeBid(auction.id, amountInTokenUnits);
+    const txHash = await placeBid(auction.id, amountInTokenUnits);
 
-    if (success) {
+    if (txHash) {
+      // Save the transaction hash for later display
+      saveBidTxHash(auction.id, address, txHash);
       handleClose();
     }
   };

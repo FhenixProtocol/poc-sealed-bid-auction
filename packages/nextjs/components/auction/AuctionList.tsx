@@ -9,6 +9,7 @@ import { useAuctionStore } from "@/services/store/auctionStore";
 import {
   AuctionData,
   AuctionStatus,
+  SettlementResult,
   getStatusLabel,
 } from "@/utils/auctionContracts";
 
@@ -33,10 +34,11 @@ export const AuctionList = ({
   filterSeller,
   onSelectAuction,
 }: AuctionListProps) => {
-  const { getAllAuctions, getTotalAuctions } = useAuction();
+  const { getAllAuctions, getTotalAuctions, getSettlementResult } = useAuction();
   const { refreshTrigger, isLoadingAuctions, setIsLoadingAuctions } = useAuctionStore();
 
   const [auctions, setAuctions] = useState<AuctionData[]>([]);
+  const [settlementResults, setSettlementResults] = useState<Record<string, SettlementResult>>({});
   const [uiStatusFilter, setUiStatusFilter] = useState<string>("all");
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [selectedAuction, setSelectedAuction] = useState<AuctionData | null>(null);
@@ -50,6 +52,21 @@ export const AuctionList = ({
         const totalAuctions = await getTotalAuctions();
         const fetchedAuctions = await getAllAuctions(BigInt(0), Number(totalAuctions));
         setAuctions(fetchedAuctions);
+
+        // Fetch settlement results for settled auctions
+        const settledAuctions = fetchedAuctions.filter(a => a.status === AuctionStatus.Settled);
+        const results: Record<string, SettlementResult> = {};
+
+        await Promise.all(
+          settledAuctions.map(async (auction) => {
+            const result = await getSettlementResult(auction.id);
+            if (result) {
+              results[auction.id.toString()] = result;
+            }
+          })
+        );
+
+        setSettlementResults(results);
       } catch (error) {
         console.error("Failed to load auctions:", error);
       } finally {
@@ -59,7 +76,7 @@ export const AuctionList = ({
     };
 
     loadAuctions();
-  }, [refreshTrigger, getAllAuctions, getTotalAuctions, setIsLoadingAuctions]);
+  }, [refreshTrigger, getAllAuctions, getTotalAuctions, getSettlementResult, setIsLoadingAuctions]);
 
   // Handle manual refresh
   const handleRefresh = async () => {
@@ -71,6 +88,21 @@ export const AuctionList = ({
       const totalAuctions = await getTotalAuctions();
       const fetchedAuctions = await getAllAuctions(BigInt(0), Number(totalAuctions));
       setAuctions(fetchedAuctions);
+
+      // Fetch settlement results for settled auctions
+      const settledAuctions = fetchedAuctions.filter(a => a.status === AuctionStatus.Settled);
+      const results: Record<string, SettlementResult> = {};
+
+      await Promise.all(
+        settledAuctions.map(async (auction) => {
+          const result = await getSettlementResult(auction.id);
+          if (result) {
+            results[auction.id.toString()] = result;
+          }
+        })
+      );
+
+      setSettlementResults(results);
     } catch (error) {
       console.error("Failed to refresh auctions:", error);
     } finally {
@@ -176,6 +208,7 @@ export const AuctionList = ({
             <AuctionCard
               key={auction.id.toString()}
               auction={auction}
+              settlementResult={settlementResults[auction.id.toString()]}
               onClick={() => {
                 setSelectedAuction(auction);
                 onSelectAuction?.(auction);

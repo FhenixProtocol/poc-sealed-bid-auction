@@ -6,6 +6,7 @@ import { parseEventLogs } from "viem";
 import { cofhejs, Encryptable } from "cofhejs/web";
 import toast from "react-hot-toast";
 import { useAuctionStore } from "@/services/store/auctionStore";
+import { toastTxSuccess } from "@/utils/explorerLink";
 import {
   AuctionData,
   AuctionStatus,
@@ -273,7 +274,7 @@ export function useAuction() {
           return false;
         }
 
-        toast.success("NFT approved!", { id: "approve-nft" });
+        toastTxSuccess("NFT approved!", approveHash, "approve-nft");
         return true;
       } catch (error) {
         console.error("Failed to approve NFT:", error);
@@ -329,7 +330,7 @@ export function useAuction() {
         const auctionCreatedEvent = events.find((e) => e.eventName === "AuctionCreated");
         const auctionId = auctionCreatedEvent?.args?.auctionId ?? null;
 
-        toast.success("Auction created successfully!", { id: "create-auction" });
+        toastTxSuccess("Auction created successfully!", createHash, "create-auction");
         triggerRefresh();
 
         return auctionId;
@@ -347,12 +348,13 @@ export function useAuction() {
   /**
    * Place a bid on an auction
    * Checks if already bid, sets operator approval if needed, encrypts the bid
+   * Returns the transaction hash on success, null on failure
    */
   const placeBid = useCallback(
-    async (auctionId: bigint, amount: bigint): Promise<boolean> => {
+    async (auctionId: bigint, amount: bigint): Promise<string | null> => {
       if (!walletClient || !address || !publicClient) {
         toast.error("Wallet not connected");
-        return false;
+        return null;
       }
 
       setIsLoading(true);
@@ -362,14 +364,14 @@ export function useAuction() {
         const alreadyBid = await hasBidOnAuction(auctionId, address);
         if (alreadyBid) {
           toast.error("You have already placed a bid on this auction");
-          return false;
+          return null;
         }
 
         // Get auction details to get the token address
         const auction = await getAuction(auctionId);
         if (!auction) {
           toast.error("Auction not found");
-          return false;
+          return null;
         }
 
         // Check if operator approval is set for the auction contract
@@ -399,7 +401,7 @@ export function useAuction() {
           });
 
           await publicClient.waitForTransactionReceipt({ hash: setOperatorHash });
-          toast.success("Operator approval set!", { id: "set-operator" });
+          toastTxSuccess("Operator approval set!", setOperatorHash, "set-operator");
         }
 
         // Encrypt the bid amount using cofhejs
@@ -410,7 +412,7 @@ export function useAuction() {
         const encrypted = encryptResult.data?.[0];
         if (!encrypted) {
           toast.error("Failed to encrypt bid amount", { id: "encrypt-bid" });
-          return false;
+          return null;
         }
 
         // Format the encrypted value to match the expected ABI structure
@@ -435,17 +437,17 @@ export function useAuction() {
 
         await publicClient.waitForTransactionReceipt({ hash: bidHash });
 
-        toast.success("Bid placed successfully!", { id: "place-bid" });
+        toastTxSuccess("Bid placed successfully!", bidHash, "place-bid");
         triggerRefresh();
 
-        return true;
+        return bidHash;
       } catch (error) {
         console.error("Failed to place bid:", error);
         toast.error("Failed to place bid", { id: "place-bid" });
         toast.dismiss("check-operator");
         toast.dismiss("set-operator");
         toast.dismiss("encrypt-bid");
-        return false;
+        return null;
       } finally {
         setIsLoading(false);
       }
@@ -477,7 +479,7 @@ export function useAuction() {
 
         await publicClient.waitForTransactionReceipt({ hash });
 
-        toast.success("Settlement requested successfully!", { id: "request-settlement" });
+        toastTxSuccess("Settlement requested successfully!", hash, "request-settlement");
         triggerRefresh();
 
         return true;
@@ -544,7 +546,7 @@ export function useAuction() {
 
         await publicClient.waitForTransactionReceipt({ hash });
 
-        toast.success("Settlement finalized successfully!", { id: "finalize-settlement" });
+        toastTxSuccess("Settlement finalized successfully!", hash, "finalize-settlement");
         triggerRefresh();
 
         return true;
@@ -583,7 +585,7 @@ export function useAuction() {
 
         await publicClient.waitForTransactionReceipt({ hash });
 
-        toast.success("Refund claimed successfully!", { id: "claim-refund" });
+        toastTxSuccess("Refund claimed successfully!", hash, "claim-refund");
         triggerRefresh();
 
         return true;
@@ -622,7 +624,7 @@ export function useAuction() {
 
         await publicClient.waitForTransactionReceipt({ hash });
 
-        toast.success("Auction cancelled successfully!", { id: "cancel-auction" });
+        toastTxSuccess("Auction cancelled successfully!", hash, "cancel-auction");
         triggerRefresh();
 
         return true;

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { Coins, ImageIcon, Loader2, RefreshCw, Lock, Unlock, Key } from "lucide-react";
+import { Coins, ImageIcon, Loader2, RefreshCw, Lock, Unlock, Key, ArrowRight } from "lucide-react";
+import { useAuctionStore } from "@/services/store/auctionStore";
 import { useMint } from "@/hooks/useMint";
 import { useCofhe } from "@/hooks/useCofhe";
 import { usePermit } from "@/hooks/usePermit";
@@ -10,6 +11,7 @@ import { PermitModal } from "@/components/PermitModal";
 
 export const MintPage = () => {
   const { address } = useAccount();
+  const { setMainTab } = useAuctionStore();
   const {
     isLoading,
     getNftBalance,
@@ -259,8 +261,19 @@ export const MintPage = () => {
           <li>* <strong>Public Balance</strong> is visible to everyone on-chain</li>
           <li>* <strong>Encrypted Balance</strong> is private and requires a permit to view</li>
           <li>* Use <strong>Shield</strong> to convert public tokens to encrypted tokens</li>
-          <li>* These are test assets on Arbitrum Sepolia</li>
+          <li>* These are test assets on <strong>Arbitrum Sepolia</strong></li>
         </ul>
+      </div>
+
+      {/* Go to Auctions Button */}
+      <div className="flex justify-center pt-4">
+        <button
+          onClick={() => setMainTab("auctions")}
+          className="btn btn-primary btn-lg gap-2 font-display uppercase tracking-wide"
+        >
+          Go to Auctions
+          <ArrowRight className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Permit Modal */}
