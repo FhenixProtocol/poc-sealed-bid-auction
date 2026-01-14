@@ -15,7 +15,6 @@ import {
   Banknote,
   RefreshCw,
   Eye,
-  EyeOff,
 } from "lucide-react";
 import { PlaceBidModal } from "./PlaceBidModal";
 import { useAuction } from "@/hooks/useAuction";
@@ -23,8 +22,9 @@ import {
   AuctionData,
   AuctionStatus,
   SettlementResult,
-  getStatusColor,
-  getStatusLabel,
+  getEffectiveStatus,
+  getEffectiveStatusColor,
+  getEffectiveStatusLabel,
 } from "@/utils/auctionContracts";
 
 interface AuctionDetailProps {
@@ -87,6 +87,9 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const [userBidAmount, setUserBidAmount] = useState<bigint | null>(null);
   const [isUnsealingBid, setIsUnsealingBid] = useState(false);
   const [bidRevealed, setBidRevealed] = useState(false);
+
+  // Timer tick for real-time status updates
+  const [, setTick] = useState(0);
 
   /**
    * Load all auction data
@@ -163,6 +166,20 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
       setIsPolling(false);
     };
   }, [settlementStep, auctionId, isDecryptionReady]);
+
+  // Timer for real-time status updates (every second when auction is active)
+  useEffect(() => {
+    if (!auction) return;
+
+    const effectiveStatus = getEffectiveStatus(auction);
+    // Only set up interval if auction is still active or pending start
+    if (effectiveStatus === AuctionStatus.Active || Date.now() / 1000 < Number(auction.startTime)) {
+      const interval = setInterval(() => {
+        setTick((t) => t + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [auction]);
 
   /**
    * Handle refresh button click
@@ -350,9 +367,9 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
             Refresh
           </button>
           <span
-            className={`badge ${getStatusColor(auction.status)} badge-md font-display uppercase tracking-wide`}
+            className={`badge ${getEffectiveStatusColor(auction)} badge-md font-display uppercase tracking-wide`}
           >
-            {getStatusLabel(auction.status)}
+            {getEffectiveStatusLabel(auction)}
           </span>
         </div>
       </div>

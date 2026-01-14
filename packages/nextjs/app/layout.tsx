@@ -4,8 +4,8 @@ import { Providers } from "@/components/Providers";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
-  title: "Shielded Stablecoin",
-  description: "Confidential stablecoin built with FHE and COFHE",
+  title: "Sealed Bid Auction",
+  description: "Sealed Bid Auction built with FHE and COFHE",
 };
 
 export default function RootLayout({
@@ -14,7 +14,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" data-theme="fhenixlight">
+    <html lang="en" data-theme="fhenixlight" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('theme') || 'fhenixlight';
+                  document.documentElement.setAttribute('data-theme', theme);
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body className="antialiased">
         <Providers>
           {children}

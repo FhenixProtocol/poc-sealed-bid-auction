@@ -4,19 +4,12 @@ import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export const ThemeToggle = () => {
-  const [theme, setTheme] = useState("fhenixlight");
+  const [theme, setTheme] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check local storage or system preference
-    const savedTheme = localStorage.getItem("theme");
-    if (savedTheme) {
-      setTheme(savedTheme);
-      document.documentElement.setAttribute("data-theme", savedTheme);
-    } else {
-      // Default to light as requested
-      setTheme("fhenixlight");
-      document.documentElement.setAttribute("data-theme", "fhenixlight");
-    }
+    // Read the current theme from the DOM (already set by the inline script)
+    const currentTheme = document.documentElement.getAttribute("data-theme") || "fhenixlight";
+    setTheme(currentTheme);
   }, []);
 
   const toggleTheme = () => {
@@ -25,6 +18,15 @@ export const ThemeToggle = () => {
     document.documentElement.setAttribute("data-theme", newTheme);
     localStorage.setItem("theme", newTheme);
   };
+
+  // Don't render until we know the theme (prevents hydration mismatch)
+  if (theme === null) {
+    return (
+      <div className="p-2 w-9 h-9">
+        {/* Placeholder to prevent layout shift */}
+      </div>
+    );
+  }
 
   return (
     <button

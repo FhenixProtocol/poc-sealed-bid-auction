@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Clock, Users, Gavel } from "lucide-react";
 import {
   AuctionData,
@@ -107,6 +108,20 @@ export const AuctionCard = ({
   onClick,
   showActions = false,
 }: AuctionCardProps) => {
+  // Force re-render every second to update time display and status
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const effectiveStatus = getEffectiveStatus(auction);
+    // Only set up interval if auction is still active or pending
+    if (effectiveStatus === AuctionStatus.Active || Date.now() / 1000 < Number(auction.startTime)) {
+      const interval = setInterval(() => {
+        setTick((t) => t + 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [auction]);
+
   const timeDisplay = getTimeDisplay(auction);
   const isClickable = !!onClick;
 
