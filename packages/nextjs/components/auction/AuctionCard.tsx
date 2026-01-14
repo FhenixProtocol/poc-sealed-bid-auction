@@ -132,9 +132,12 @@ export const AuctionCard = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-base-200 border border-base-300 p-5 transition-all ${
+      onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } } : undefined}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      className={`bg-base-200 border border-base-300 p-5 transition-colors ${
         isClickable
-          ? "cursor-pointer hover:border-primary/50"
+          ? "cursor-pointer hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
           : ""
       }`}
     >

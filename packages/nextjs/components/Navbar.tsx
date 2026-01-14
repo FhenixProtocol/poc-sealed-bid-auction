@@ -43,7 +43,7 @@ export const Navbar = () => {
           <div className="hidden md:flex items-center gap-1 bg-base-200 p-1 rounded-sm border border-base-300">
             <button
               onClick={() => setMainTab("mint")}
-              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
+              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-colors ${
                 mainTab === "mint"
                   ? "btn-fhenix shadow-sm"
                   : "hover:bg-base-300"
@@ -54,7 +54,7 @@ export const Navbar = () => {
             </button>
             <button
               onClick={() => setMainTab("auctions")}
-              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-all ${
+              className={`px-4 py-1.5 rounded-sm text-xs font-display uppercase tracking-wider font-bold flex items-center gap-2 transition-colors ${
                 mainTab === "auctions"
                   ? "btn-fhenix shadow-sm"
                   : "hover:bg-base-300"
@@ -81,8 +81,8 @@ export const Navbar = () => {
                 </div>
                 <button
                   onClick={() => disconnect()}
-                  className="p-2 bg-base-200 border border-base-300 hover:border-red-500 hover:bg-red-500/10 rounded-sm transition-all group"
-                  title="Disconnect"
+                  className="p-2 bg-base-200 border border-base-300 hover:border-red-500 hover:bg-red-500/10 rounded-sm transition-colors group"
+                  aria-label="Disconnect wallet"
                 >
                   <LogOut className="w-4 h-4 text-base-content/50 group-hover:text-red-500" />
                 </button>

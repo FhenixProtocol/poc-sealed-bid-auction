@@ -70,7 +70,7 @@ export const PermitModal = ({ isOpen, onClose }: PermitModalProps) => {
               Manage Permit
             </h2>
           </div>
-          <button onClick={onClose} className="btn btn-ghost btn-sm btn-square">
+          <button onClick={onClose} className="btn btn-ghost btn-sm btn-square" aria-label="Close modal">
             <X className="w-5 h-5" />
           </button>
         </div>

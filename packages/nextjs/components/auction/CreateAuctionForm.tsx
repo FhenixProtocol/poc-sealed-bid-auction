@@ -219,11 +219,13 @@ export const CreateAuctionForm = () => {
           </label>
           <input
             type="text"
+            name="auctionName"
             placeholder="e.g., Rare Digital Art #42"
             value={auctionName}
             onChange={(e) => setAuctionName(e.target.value)}
             disabled={!isWalletConnected || isLoading}
             maxLength={50}
+            autoComplete="off"
             className="input input-bordered font-mono text-sm"
           />
         </div>

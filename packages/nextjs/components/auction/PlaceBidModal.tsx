@@ -142,6 +142,7 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
           onClick={handleClose}
           className="absolute top-4 right-4 p-1 text-base-content/50 hover:text-base-content transition-colors"
           disabled={isLoading}
+          aria-label="Close modal"
         >
           <X className="w-5 h-5" />
         </button>
@@ -219,12 +220,14 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
             <div className="flex gap-2">
               <input
                 type="number"
+                name="bidAmount"
                 placeholder="0.000000"
                 step="0.000001"
                 min="0"
                 value={bidAmount}
                 onChange={(e) => setBidAmount(e.target.value)}
                 disabled={isLoading}
+                autoComplete="off"
                 className="input input-bordered font-mono text-sm flex-1"
               />
               {unsealedBalance !== null && unsealedBalance > BigInt(0) && (
