@@ -110,18 +110,21 @@ export function useAuction() {
 
       try {
         const totalAuctions = await getTotalAuctions();
-        const auctions: AuctionData[] = [];
-
         const endId = startId + BigInt(limit) > totalAuctions ? totalAuctions : startId + BigInt(limit);
 
+        // Generate array of auction IDs to fetch
+        const auctionIds: bigint[] = [];
         for (let i = startId; i < endId; i++) {
-          const auction = await getAuction(i);
-          if (auction) {
-            auctions.push(auction);
-          }
+          auctionIds.push(i);
         }
 
-        return auctions;
+        // Fetch all auctions in parallel to eliminate waterfall
+        const auctionResults = await Promise.all(
+          auctionIds.map(id => getAuction(id))
+        );
+
+        // Filter out null results
+        return auctionResults.filter((auction): auction is AuctionData => auction !== null);
       } catch (error) {
         console.error("Failed to get all auctions:", error);
         return [];

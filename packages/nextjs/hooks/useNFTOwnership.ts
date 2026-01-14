@@ -34,18 +34,20 @@ export function useNFTOwnership() {
       });
 
       const count = Number(balance);
-      const tokenIds: bigint[] = [];
 
-      // Fetch each token ID by index
-      for (let i = 0; i < count; i++) {
-        const tokenId = await publicClient.readContract({
-          address: NFT_CONTRACT_ADDRESS,
-          abi: auctionNftAbi,
-          functionName: "tokenOfOwnerByIndex",
-          args: [address, BigInt(i)],
-        });
-        tokenIds.push(tokenId as bigint);
-      }
+      // Fetch all token IDs in parallel to eliminate waterfall
+      const indices = Array.from({ length: count }, (_, i) => BigInt(i));
+      const tokenIds = await Promise.all(
+        indices.map(async (index) => {
+          const tokenId = await publicClient.readContract({
+            address: NFT_CONTRACT_ADDRESS,
+            abi: auctionNftAbi,
+            functionName: "tokenOfOwnerByIndex",
+            args: [address, index],
+          });
+          return tokenId as bigint;
+        })
+      );
 
       setOwnedTokenIds(tokenIds);
       return tokenIds;

@@ -44,15 +44,18 @@ const MyBidsView = ({ address, onSelectAuction }: MyBidsViewProps) => {
       const totalAuctions = await getTotalAuctions();
       const allAuctions = await getAllAuctions(BigInt(0), Number(totalAuctions));
 
-      // Filter to auctions user has bid on
-      const myBidAuctions: AuctionData[] = [];
+      // Check all bids in parallel to eliminate waterfall
+      const bidChecks = await Promise.all(
+        allAuctions.map(async (auction) => ({
+          auction,
+          hasBid: await hasBidOnAuction(auction.id, address),
+        }))
+      );
 
-      for (const auction of allAuctions) {
-        const hasBid = await hasBidOnAuction(auction.id, address);
-        if (hasBid) {
-          myBidAuctions.push(auction);
-        }
-      }
+      // Filter to auctions user has bid on
+      const myBidAuctions = bidChecks
+        .filter(({ hasBid }) => hasBid)
+        .map(({ auction }) => auction);
 
       // Sort by ID descending (newest first)
       myBidAuctions.sort((a, b) => {

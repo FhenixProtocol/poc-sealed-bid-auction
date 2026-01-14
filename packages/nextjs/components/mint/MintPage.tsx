@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { Coins, ImageIcon, Loader2, RefreshCw, Lock, Unlock, Key, ArrowRight } from "lucide-react";
 import { useAuctionStore } from "@/services/store/auctionStore";
@@ -32,7 +32,7 @@ export const MintPage = () => {
 
   const isWalletConnected = !!address;
 
-  const refreshBalances = async () => {
+  const refreshBalances = useCallback(async () => {
     setIsRefreshing(true);
     const [nft, encryptedHash] = await Promise.all([
       getNftBalance(),
@@ -43,13 +43,13 @@ export const MintPage = () => {
     // Reset encrypted balance when refreshing - user needs to unseal again
     setEncryptedTokenBalance(null);
     setIsRefreshing(false);
-  };
+  }, [getNftBalance, getEncryptedTokenBalanceHash]);
 
   useEffect(() => {
     if (isWalletConnected) {
       refreshBalances();
     }
-  }, [isWalletConnected, address]);
+  }, [isWalletConnected, refreshBalances]);
 
   const handleMintNft = async () => {
     const success = await mintNft();

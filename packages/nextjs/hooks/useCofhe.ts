@@ -220,12 +220,12 @@ export const useCofhejsAccount = () => {
 };
 
 export const useCofhejsActivePermitHashes = () => {
-  const activePermitHash = useSyncExternalStore(
+  // useSyncExternalStore already provides stable references, no need for useMemo wrapper
+  return useSyncExternalStore(
     permitStore.store.subscribe,
     getActivePermitHashState,
     () => ({}) as Record<Address, string | undefined> // Server snapshot
   );
-  return useMemo(() => activePermitHash, [activePermitHash]);
 };
 
 export const useCofhejsActivePermitHash = () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Loader2, RefreshCw, Filter } from "lucide-react";
 import { AuctionCard } from "./AuctionCard";
 import { AuctionDetailModal } from "./AuctionDetailModal";
@@ -43,45 +43,8 @@ export const AuctionList = ({
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [selectedAuction, setSelectedAuction] = useState<AuctionData | null>(null);
 
-  // Load auctions on mount and when refreshTrigger changes
-  useEffect(() => {
-    const loadAuctions = async () => {
-      setIsLoadingAuctions(true);
-
-      try {
-        const totalAuctions = await getTotalAuctions();
-        const fetchedAuctions = await getAllAuctions(BigInt(0), Number(totalAuctions));
-        setAuctions(fetchedAuctions);
-
-        // Fetch settlement results for settled auctions
-        const settledAuctions = fetchedAuctions.filter(a => a.status === AuctionStatus.Settled);
-        const results: Record<string, SettlementResult> = {};
-
-        await Promise.all(
-          settledAuctions.map(async (auction) => {
-            const result = await getSettlementResult(auction.id);
-            if (result) {
-              results[auction.id.toString()] = result;
-            }
-          })
-        );
-
-        setSettlementResults(results);
-      } catch (error) {
-        console.error("Failed to load auctions:", error);
-      } finally {
-        setIsLoadingAuctions(false);
-        setIsInitialLoad(false);
-      }
-    };
-
-    loadAuctions();
-  }, [refreshTrigger, getAllAuctions, getTotalAuctions, getSettlementResult, setIsLoadingAuctions]);
-
-  // Handle manual refresh
-  const handleRefresh = async () => {
-    if (isLoadingAuctions) return;
-
+  // Shared auction loading logic
+  const loadAuctions = useCallback(async (isInitial = false) => {
     setIsLoadingAuctions(true);
 
     try {
@@ -89,7 +52,7 @@ export const AuctionList = ({
       const fetchedAuctions = await getAllAuctions(BigInt(0), Number(totalAuctions));
       setAuctions(fetchedAuctions);
 
-      // Fetch settlement results for settled auctions
+      // Fetch settlement results for settled auctions in parallel
       const settledAuctions = fetchedAuctions.filter(a => a.status === AuctionStatus.Settled);
       const results: Record<string, SettlementResult> = {};
 
@@ -104,11 +67,25 @@ export const AuctionList = ({
 
       setSettlementResults(results);
     } catch (error) {
-      console.error("Failed to refresh auctions:", error);
+      console.error("Failed to load auctions:", error);
     } finally {
       setIsLoadingAuctions(false);
+      if (isInitial) {
+        setIsInitialLoad(false);
+      }
     }
-  };
+  }, [getAllAuctions, getTotalAuctions, getSettlementResult, setIsLoadingAuctions]);
+
+  // Load auctions on mount and when refreshTrigger changes
+  useEffect(() => {
+    loadAuctions(true);
+  }, [refreshTrigger, loadAuctions]);
+
+  // Handle manual refresh
+  const handleRefresh = useCallback(() => {
+    if (isLoadingAuctions) return;
+    loadAuctions(false);
+  }, [isLoadingAuctions, loadAuctions]);
 
   // Filter and sort auctions
   const filteredAuctions = useMemo(() => {

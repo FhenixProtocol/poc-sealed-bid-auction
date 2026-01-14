@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { cofhejs, FheTypes } from "cofhejs/web";
 import {
@@ -140,7 +140,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const [showWinnerModal, setShowWinnerModal] = useState(false);
 
   // Timer tick for real-time status updates
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
 
   /**
    * Load all auction data
@@ -343,43 +343,49 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     }
   };
 
-  // Derived state
-  const isSeller = auction && address && auction.seller.toLowerCase() === address.toLowerCase();
-  const isWinner =
-    settlementResult && address && settlementResult.winner.toLowerCase() === address.toLowerCase();
-  const now = BigInt(Math.floor(Date.now() / 1000));
-  const isAuctionEnded = auction && now >= auction.endTime;
-  const isAuctionActive = auction && auction.status === AuctionStatus.Active;
+  // Derived state - memoized to prevent unnecessary recalculations
+  const derivedState = useMemo(() => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const isSeller = auction && address ? auction.seller.toLowerCase() === address.toLowerCase() : false;
+    const isWinner = settlementResult && address ? settlementResult.winner.toLowerCase() === address.toLowerCase() : false;
+    const isAuctionEnded = auction ? now >= auction.endTime : false;
+    const isAuctionActive = auction ? auction.status === AuctionStatus.Active : false;
 
-  // Determine which action buttons to show
-  const showPlaceBid =
-    auction &&
-    isAuctionActive &&
-    !isAuctionEnded &&
-    !userHasBid &&
-    !isSeller;
+    // Determine which action buttons to show
+    const showPlaceBid = auction && isAuctionActive && !isAuctionEnded && !userHasBid && !isSeller;
 
-  // Show settlement flow for seller when auction has ended with bids
-  const showSettlementFlow =
-    auction &&
-    isSeller &&
-    isAuctionEnded &&
-    auction.totalBids > BigInt(0) &&
-    auction.status !== AuctionStatus.Settled &&
-    auction.status !== AuctionStatus.Cancelled;
+    // Show settlement flow for seller when auction has ended with bids
+    const showSettlementFlow =
+      auction &&
+      isSeller &&
+      isAuctionEnded &&
+      auction.totalBids > BigInt(0) &&
+      auction.status !== AuctionStatus.Settled &&
+      auction.status !== AuctionStatus.Cancelled;
 
-  const showClaimRefund =
-    auction &&
-    auction.status === AuctionStatus.Settled &&
-    userHasBid &&
-    !userHasRefunded &&
-    !isWinner;
+    const showClaimRefund =
+      auction &&
+      auction.status === AuctionStatus.Settled &&
+      userHasBid &&
+      !userHasRefunded &&
+      !isWinner;
 
-  const showCancelAuction =
-    auction &&
-    isSeller &&
-    isAuctionActive &&
-    auction.totalBids === BigInt(0);
+    const showCancelAuction = auction && isSeller && isAuctionActive && auction.totalBids === BigInt(0);
+
+    return {
+      isSeller,
+      isWinner,
+      isAuctionEnded,
+      isAuctionActive,
+      showPlaceBid,
+      showSettlementFlow,
+      showClaimRefund,
+      showCancelAuction,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auction, address, settlementResult, userHasBid, userHasRefunded, tick]);
+
+  const { isSeller, isWinner, showPlaceBid, showSettlementFlow, showClaimRefund, showCancelAuction } = derivedState;
 
   // Loading state
   if (isLoadingData && !auction) {
