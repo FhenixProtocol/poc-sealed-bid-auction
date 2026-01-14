@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Eye,
   ExternalLink,
+  PartyPopper,
+  Gift,
 } from "lucide-react";
 import { PlaceBidModal } from "./PlaceBidModal";
 import { useAuction } from "@/hooks/useAuction";
@@ -68,6 +70,35 @@ function getBidTxHash(auctionId: bigint, bidder: string): string | null {
 }
 
 /**
+ * Check if the winner celebration modal has been shown for this auction
+ */
+function hasSeenWinnerModal(auctionId: bigint, winner: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const seenModals = JSON.parse(localStorage.getItem("winnerModalsSeen") || "{}");
+    const key = `${auctionId.toString()}-${winner.toLowerCase()}`;
+    return seenModals[key] === true;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Mark the winner celebration modal as seen for this auction
+ */
+function markWinnerModalSeen(auctionId: bigint, winner: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const seenModals = JSON.parse(localStorage.getItem("winnerModalsSeen") || "{}");
+    const key = `${auctionId.toString()}-${winner.toLowerCase()}`;
+    seenModals[key] = true;
+    localStorage.setItem("winnerModalsSeen", JSON.stringify(seenModals));
+  } catch {
+    console.error("Failed to save winner modal state to localStorage");
+  }
+}
+
+/**
  * Detailed view of a single auction with actions
  */
 type SettlementStep = "request" | "waiting" | "finalize";
@@ -104,6 +135,9 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const [userBidAmount, setUserBidAmount] = useState<bigint | null>(null);
   const [isUnsealingBid, setIsUnsealingBid] = useState(false);
   const [bidRevealed, setBidRevealed] = useState(false);
+
+  // Winner celebration modal state
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
 
   // Timer tick for real-time status updates
   const [, setTick] = useState(0);
@@ -198,6 +232,18 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     }
   }, [auction]);
 
+  // Show winner celebration modal when winner visits for the first time
+  useEffect(() => {
+    if (
+      settlementResult &&
+      address &&
+      settlementResult.winner.toLowerCase() === address.toLowerCase() &&
+      !hasSeenWinnerModal(auctionId, address)
+    ) {
+      setShowWinnerModal(true);
+    }
+  }, [settlementResult, address, auctionId]);
+
   /**
    * Handle refresh button click
    */
@@ -252,6 +298,16 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const handleBidModalClose = () => {
     setShowBidModal(false);
     loadAuctionData();
+  };
+
+  /**
+   * Handle winner celebration modal close
+   */
+  const handleWinnerModalClose = () => {
+    if (address) {
+      markWinnerModalSeen(auctionId, address);
+    }
+    setShowWinnerModal(false);
   };
 
   /**
@@ -705,6 +761,78 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
           isOpen={showBidModal}
           onClose={handleBidModalClose}
         />
+      )}
+
+      {/* Winner Celebration Modal */}
+      {showWinnerModal && settlementResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={handleWinnerModalClose}
+        >
+          <div
+            className="relative bg-base-100 border border-primary p-8 w-full max-w-md mx-4 text-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Corner accents */}
+            <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-primary" />
+            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-primary" />
+            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-primary" />
+            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-primary" />
+
+            {/* Celebration icon */}
+            <div className="flex justify-center mb-4">
+              <div className="p-4 bg-success/20 border-2 border-success rounded-full">
+                <PartyPopper className="w-12 h-12 text-success" />
+              </div>
+            </div>
+
+            {/* Title */}
+            <h2 className="text-3xl font-display font-bold text-success uppercase tracking-wide mb-2">
+              You Won!
+            </h2>
+            <p className="text-base-content/70 mb-6">
+              Congratulations! You are the winner of this auction.
+            </p>
+
+            {/* Prize section */}
+            <div className="bg-base-200 border border-base-300 p-4 mb-4">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Gift className="w-5 h-5 text-primary" />
+                <span className="text-sm font-display uppercase tracking-widest text-base-content/50">
+                  Your Prize
+                </span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-base-content/70">NFT Token ID</p>
+                <p className="text-2xl font-mono text-primary font-bold">
+                  #{auction.tokenId.toString()}
+                </p>
+              </div>
+            </div>
+
+            {/* Winning bid section */}
+            <div className="bg-base-200 border border-base-300 p-4 mb-6">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <Trophy className="w-5 h-5 text-success" />
+                <span className="text-sm font-display uppercase tracking-widest text-base-content/50">
+                  Winning Bid
+                </span>
+              </div>
+              <p className="text-2xl font-mono text-success font-bold">
+                {formatTokenAmount(settlementResult.amount)} AUCT
+              </p>
+            </div>
+
+            {/* Close button */}
+            <button
+              onClick={handleWinnerModalClose}
+              className="btn btn-primary w-full font-display uppercase tracking-wide"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Awesome!
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
