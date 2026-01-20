@@ -2,6 +2,9 @@ import hre, { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { cofhejs, Encryptable } from "cofhejs/node";
 
+// Default auction name for tests
+export const DEFAULT_AUCTION_NAME = "Test Auction";
+
 export async function deployContracts() {
   const [deployer, seller, bidder1, bidder2, bidder3] = await ethers.getSigners();
 
@@ -68,7 +71,7 @@ export async function createAuctionFixture() {
   };
 }
 
-export async function createActiveAuctionFixture() {
+export async function createActiveAuctionFixture(auctionName: string = DEFAULT_AUCTION_NAME) {
   const fixture = await createAuctionFixture();
   const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } = fixture;
 
@@ -76,6 +79,7 @@ export async function createActiveAuctionFixture() {
   await sealedBidAuction
     .connect(seller)
     .createAuction(
+      auctionName,
       await auctionNFT.getAddress(),
       tokenId,
       await auctionToken.getAddress(),
@@ -89,6 +93,7 @@ export async function createActiveAuctionFixture() {
   return {
     ...fixture,
     auctionId: 0n,
+    auctionName,
   };
 }
 

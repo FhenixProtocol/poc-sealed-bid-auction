@@ -49,18 +49,30 @@ export function useAuction() {
           args: [auctionId],
         });
 
-        const [seller, nftContract, tokenId, fherc20Token, startTime, endTime, status, totalBids] = result;
+        // The contract returns an AuctionView struct
+        const auctionView = result as {
+          name: string;
+          seller: `0x${string}`;
+          nftContract: `0x${string}`;
+          tokenId: bigint;
+          fherc20Token: `0x${string}`;
+          startTime: bigint;
+          endTime: bigint;
+          status: number;
+          totalBids: bigint;
+        };
 
         const auctionData: AuctionData = {
           id: auctionId,
-          seller: seller as `0x${string}`,
-          nftContract: nftContract as `0x${string}`,
-          tokenId: tokenId as bigint,
-          fherc20Token: fherc20Token as `0x${string}`,
-          startTime: startTime as bigint,
-          endTime: endTime as bigint,
-          status: status as AuctionStatus,
-          totalBids: totalBids as bigint,
+          name: auctionView.name,
+          seller: auctionView.seller,
+          nftContract: auctionView.nftContract,
+          tokenId: auctionView.tokenId,
+          fherc20Token: auctionView.fherc20Token,
+          startTime: auctionView.startTime,
+          endTime: auctionView.endTime,
+          status: auctionView.status as AuctionStatus,
+          totalBids: auctionView.totalBids,
         };
 
         // Cache the auction data
@@ -295,6 +307,7 @@ export function useAuction() {
    */
   const createAuction = useCallback(
     async (
+      name: string,
       nftContract: `0x${string}`,
       tokenId: bigint,
       fherc20Token: `0x${string}`,
@@ -315,7 +328,7 @@ export function useAuction() {
           address: AUCTION_CONTRACT_ADDRESS,
           abi: sealedBidAuctionAbi,
           functionName: "createAuction",
-          args: [nftContract, tokenId, fherc20Token, startTime, endTime],
+          args: [name, nftContract, tokenId, fherc20Token, startTime, endTime],
         });
 
         const receipt = await publicClient.waitForTransactionReceipt({ hash: createHash });

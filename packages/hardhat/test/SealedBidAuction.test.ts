@@ -9,6 +9,7 @@ import {
   encryptBidAmount,
   createAuctionWithBidFixture,
   createAuctionReadyForSettlementFixture,
+  DEFAULT_AUCTION_NAME,
 } from "./helpers/setup";
 
 describe("SealedBidAuction", function () {
@@ -32,6 +33,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -50,6 +52,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -68,6 +71,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -86,6 +90,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -104,6 +109,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -123,6 +129,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -141,6 +148,7 @@ describe("SealedBidAuction", function () {
         sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -152,6 +160,7 @@ describe("SealedBidAuction", function () {
         .withArgs(
           0,
           seller.address,
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -168,6 +177,7 @@ describe("SealedBidAuction", function () {
         sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -185,6 +195,7 @@ describe("SealedBidAuction", function () {
         sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -204,6 +215,7 @@ describe("SealedBidAuction", function () {
         sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -225,6 +237,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          "First Auction",
           await auctionNFT.getAddress(),
           0,
           await auctionToken.getAddress(),
@@ -236,6 +249,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(bidder1)
         .createAuction(
+          "Second Auction",
           await auctionNFT.getAddress(),
           1,
           await auctionToken.getAddress(),
@@ -351,6 +365,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -387,6 +402,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -418,6 +434,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -499,6 +516,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -751,6 +769,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -771,6 +790,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -794,6 +814,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -813,6 +834,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -832,6 +854,7 @@ describe("SealedBidAuction", function () {
       await sealedBidAuction
         .connect(seller)
         .createAuction(
+          DEFAULT_AUCTION_NAME,
           await auctionNFT.getAddress(),
           tokenId,
           await auctionToken.getAddress(),
@@ -864,6 +887,7 @@ describe("SealedBidAuction", function () {
         await sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -892,6 +916,7 @@ describe("SealedBidAuction", function () {
         await sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -917,6 +942,7 @@ describe("SealedBidAuction", function () {
         await sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -936,6 +962,7 @@ describe("SealedBidAuction", function () {
         await sealedBidAuction
           .connect(seller)
           .createAuction(
+            DEFAULT_AUCTION_NAME,
             await auctionNFT.getAddress(),
             tokenId,
             await auctionToken.getAddress(),
@@ -1042,6 +1069,119 @@ describe("SealedBidAuction", function () {
 
       const result = await sealedBidAuction.getSettlementResult(auctionId);
       expect(result.winner).to.equal(bidder1.address);
+    });
+  });
+
+  describe("Auction Naming", function () {
+    it("should store auction name correctly", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      const auctionName = "My Cool Auction";
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          auctionName,
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.name).to.equal(auctionName);
+    });
+
+    it("should revert if name is empty", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            "",
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          )
+      ).to.be.revertedWithCustomError(sealedBidAuction, "NameRequired");
+    });
+
+    it("should revert if name is longer than 32 characters", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      const longName = "A".repeat(33); // 33 characters
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            longName,
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          )
+      ).to.be.revertedWithCustomError(sealedBidAuction, "NameTooLong");
+    });
+
+    it("should allow exactly 32 character name", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      const maxName = "A".repeat(32); // Exactly 32 characters
+
+      await sealedBidAuction
+        .connect(seller)
+        .createAuction(
+          maxName,
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
+
+      const auction = await sealedBidAuction.getAuction(0);
+      expect(auction.name).to.equal(maxName);
+    });
+
+    it("should include name in AuctionCreated event", async function () {
+      const { auctionNFT, auctionToken, sealedBidAuction, seller, tokenId, startTime, endTime } =
+        await createAuctionFixture();
+
+      const auctionName = "Event Test Auction";
+
+      await expect(
+        sealedBidAuction
+          .connect(seller)
+          .createAuction(
+            auctionName,
+            await auctionNFT.getAddress(),
+            tokenId,
+            await auctionToken.getAddress(),
+            startTime,
+            endTime
+          )
+      )
+        .to.emit(sealedBidAuction, "AuctionCreated")
+        .withArgs(
+          0,
+          seller.address,
+          auctionName,
+          await auctionNFT.getAddress(),
+          tokenId,
+          await auctionToken.getAddress(),
+          startTime,
+          endTime
+        );
     });
   });
 });

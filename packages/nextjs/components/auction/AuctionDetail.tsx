@@ -28,7 +28,7 @@ import {
   getEffectiveStatus,
   getEffectiveStatusColor,
   getEffectiveStatusLabel,
-  getAuctionName,
+  getAuctionDisplayTitle,
 } from "@/utils/auctionContracts";
 import { getExplorerTxUrl } from "@/utils/explorerLink";
 
@@ -433,9 +433,9 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
             </div>
             <div className="flex flex-col">
               <h2 className="text-xl font-display font-bold text-base-content uppercase tracking-wide">
-                {getAuctionName(auctionId) || `Auction #${auctionId.toString()}`}
+                {auction ? getAuctionDisplayTitle(auction) : `Auction #${auctionId.toString()}`}
               </h2>
-              {getAuctionName(auctionId) && (
+              {auction?.name && (
                 <span className="text-xs text-base-content/50 font-mono">
                   #{auctionId.toString()}
                 </span>

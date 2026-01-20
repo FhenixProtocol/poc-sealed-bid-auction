@@ -22,6 +22,7 @@ export enum AuctionStatus {
  */
 export interface AuctionData {
   id: bigint;
+  name: string;
   seller: `0x${string}`;
   nftContract: `0x${string}`;
   tokenId: bigint;
@@ -113,26 +114,11 @@ export function getEffectiveStatusColor(auction: AuctionData): string {
 }
 
 /**
- * Get the custom name for an auction from localStorage
- * Returns null if no name was set
- */
-export function getAuctionName(auctionId: bigint): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const auctionNames = JSON.parse(localStorage.getItem("auctionNames") || "{}");
-    return auctionNames[auctionId.toString()] || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Get the display title for an auction
- * Uses custom name if set, otherwise falls back to "Auction #ID"
+ * Uses the on-chain name, falls back to "Auction #ID" if empty
  */
 export function getAuctionDisplayTitle(auction: AuctionData): string {
-  const customName = getAuctionName(auction.id);
-  return customName || `Auction #${auction.id.toString()}`;
+  return auction.name || `Auction #${auction.id.toString()}`;
 }
 
 // ============ Contract ABIs ============
@@ -146,14 +132,21 @@ export const sealedBidAuctionAbi = [
     inputs: [{ name: "auctionId", type: "uint256" }],
     name: "getAuction",
     outputs: [
-      { name: "seller", type: "address" },
-      { name: "nftContract", type: "address" },
-      { name: "tokenId", type: "uint256" },
-      { name: "fherc20Token", type: "address" },
-      { name: "startTime", type: "uint256" },
-      { name: "endTime", type: "uint256" },
-      { name: "status", type: "uint8" },
-      { name: "totalBids", type: "uint256" },
+      {
+        name: "auctionView",
+        type: "tuple",
+        components: [
+          { name: "name", type: "string" },
+          { name: "seller", type: "address" },
+          { name: "nftContract", type: "address" },
+          { name: "tokenId", type: "uint256" },
+          { name: "fherc20Token", type: "address" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "status", type: "uint8" },
+          { name: "totalBids", type: "uint256" },
+        ],
+      },
     ],
     stateMutability: "view",
     type: "function",
@@ -199,6 +192,7 @@ export const sealedBidAuctionAbi = [
   // ============ Write Functions ============
   {
     inputs: [
+      { name: "name", type: "string" },
       { name: "nftContract", type: "address" },
       { name: "tokenId", type: "uint256" },
       { name: "fherc20Token", type: "address" },
@@ -281,6 +275,7 @@ export const sealedBidAuctionAbi = [
     inputs: [
       { indexed: true, name: "auctionId", type: "uint256" },
       { indexed: true, name: "seller", type: "address" },
+      { indexed: false, name: "name", type: "string" },
       { indexed: false, name: "nftContract", type: "address" },
       { indexed: false, name: "tokenId", type: "uint256" },
       { indexed: false, name: "fherc20Token", type: "address" },

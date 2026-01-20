@@ -96,6 +96,17 @@ export const CreateAuctionForm = () => {
    * Validate form inputs before submission
    */
   const validateForm = (): boolean => {
+    // Check auction name is provided and valid
+    if (!auctionName.trim()) {
+      toast.error("Please enter an auction name");
+      return false;
+    }
+
+    if (auctionName.trim().length > 32) {
+      toast.error("Auction name must be 32 characters or less");
+      return false;
+    }
+
     // Check NFT is selected
     if (selectedTokenId === null) {
       toast.error("Please select an NFT");
@@ -144,7 +155,9 @@ export const CreateAuctionForm = () => {
     const endTimestamp = BigInt(now + 30 + selectedDuration);
 
     // Use the fixed addresses from environment
+    // Name is now stored on-chain
     const result = await createAuction(
+      auctionName.trim(),
       nftContractAddress as `0x${string}`,
       selectedTokenId!,
       tokenContractAddress as `0x${string}`,
@@ -153,12 +166,6 @@ export const CreateAuctionForm = () => {
     );
 
     if (result !== null) {
-      // Save auction name to localStorage if provided
-      if (auctionName.trim()) {
-        const auctionNames = JSON.parse(localStorage.getItem("auctionNames") || "{}");
-        auctionNames[result.toString()] = auctionName.trim();
-        localStorage.setItem("auctionNames", JSON.stringify(auctionNames));
-      }
       setCreatedAuctionId(result);
       setShowSuccessModal(true);
       resetForm();
@@ -215,7 +222,9 @@ export const CreateAuctionForm = () => {
               <Tag className="w-3 h-3" />
               Auction Name
             </span>
-            <span className="label-text-alt text-base-content/50">(Optional)</span>
+            <span className="label-text-alt text-base-content/50">
+              {auctionName.length}/32 characters
+            </span>
           </label>
           <input
             type="text"
@@ -224,9 +233,12 @@ export const CreateAuctionForm = () => {
             value={auctionName}
             onChange={(e) => setAuctionName(e.target.value)}
             disabled={!isWalletConnected || isLoading}
-            maxLength={50}
+            maxLength={32}
             autoComplete="off"
-            className="input input-bordered font-mono text-sm"
+            required
+            className={`input input-bordered font-mono text-sm ${
+              auctionName.length > 32 ? "input-error" : ""
+            }`}
           />
         </div>
 

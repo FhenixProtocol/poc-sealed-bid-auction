@@ -30,6 +30,7 @@ contract SealedBidAuction is IERC721Receiver {
     // ============ Structs ============
 
     struct Auction {
+        string name;
         address seller;
         address nftContract;
         uint256 tokenId;
@@ -47,6 +48,19 @@ contract SealedBidAuction is IERC721Receiver {
         uint256 totalBids;
     }
 
+    /// @notice View struct for returning auction details (avoids stack too deep)
+    struct AuctionView {
+        string name;
+        address seller;
+        address nftContract;
+        uint256 tokenId;
+        address fherc20Token;
+        uint256 startTime;
+        uint256 endTime;
+        Status status;
+        uint256 totalBids;
+    }
+
     // ============ State Variables ============
 
     mapping(uint256 => Auction) public auctions;
@@ -61,6 +75,7 @@ contract SealedBidAuction is IERC721Receiver {
     event AuctionCreated(
         uint256 indexed auctionId,
         address indexed seller,
+        string name,
         address nftContract,
         uint256 tokenId,
         address fherc20Token,
@@ -101,6 +116,8 @@ contract SealedBidAuction is IERC721Receiver {
     error NoBidsPlaced();
     error AlreadyBid();
     error AuctionNotSettled();
+    error NameRequired();
+    error NameTooLong();
 
     // ============ ERC721 Receiver ============
 
@@ -116,6 +133,7 @@ contract SealedBidAuction is IERC721Receiver {
     // ============ Auction Creation ============
 
     /// @notice Create a new auction
+    /// @param name The auction name (max 32 characters)
     /// @param nftContract The ERC721 contract address
     /// @param tokenId The token ID to auction
     /// @param fherc20Token The FHERC20 token for payments
@@ -123,12 +141,15 @@ contract SealedBidAuction is IERC721Receiver {
     /// @param endTime When bidding closes (unix timestamp)
     /// @return auctionId The ID of the created auction
     function createAuction(
+        string calldata name,
         address nftContract,
         uint256 tokenId,
         address fherc20Token,
         uint256 startTime,
         uint256 endTime
     ) external returns (uint256 auctionId) {
+        if (bytes(name).length == 0) revert NameRequired();
+        if (bytes(name).length > 32) revert NameTooLong();
         if (endTime <= startTime) revert InvalidTimeRange();
         if (startTime < block.timestamp) revert InvalidTimeRange();
 
@@ -142,6 +163,7 @@ contract SealedBidAuction is IERC721Receiver {
         auctionId = nextAuctionId++;
 
         Auction storage auction = auctions[auctionId];
+        auction.name = name;
         auction.seller = msg.sender;
         auction.nftContract = nftContract;
         auction.tokenId = tokenId;
@@ -159,6 +181,7 @@ contract SealedBidAuction is IERC721Receiver {
         emit AuctionCreated(
             auctionId,
             msg.sender,
+            name,
             nftContract,
             tokenId,
             fherc20Token,
@@ -357,41 +380,22 @@ contract SealedBidAuction is IERC721Receiver {
 
     /// @notice Get auction details
     /// @param auctionId The auction to query
-    /// @return seller The seller address
-    /// @return nftContract The NFT contract address
-    /// @return tokenId The token ID
-    /// @return fherc20Token The payment token address
-    /// @return startTime The auction start time
-    /// @return endTime The auction end time
-    /// @return status The auction status
-    /// @return totalBids The total number of bids
+    /// @return auctionView The auction details as a struct
     function getAuction(
         uint256 auctionId
-    )
-        external
-        view
-        returns (
-            address seller,
-            address nftContract,
-            uint256 tokenId,
-            address fherc20Token,
-            uint256 startTime,
-            uint256 endTime,
-            Status status,
-            uint256 totalBids
-        )
-    {
+    ) external view returns (AuctionView memory auctionView) {
         Auction storage auction = auctions[auctionId];
-        return (
-            auction.seller,
-            auction.nftContract,
-            auction.tokenId,
-            auction.fherc20Token,
-            auction.startTime,
-            auction.endTime,
-            auction.status,
-            auction.totalBids
-        );
+        return AuctionView({
+            name: auction.name,
+            seller: auction.seller,
+            nftContract: auction.nftContract,
+            tokenId: auction.tokenId,
+            fherc20Token: auction.fherc20Token,
+            startTime: auction.startTime,
+            endTime: auction.endTime,
+            status: auction.status,
+            totalBids: auction.totalBids
+        });
     }
 
     /// @notice Get settlement results (only available after settlement)

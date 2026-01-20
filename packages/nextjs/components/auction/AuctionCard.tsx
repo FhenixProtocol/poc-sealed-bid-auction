@@ -9,7 +9,7 @@ import {
   getEffectiveStatus,
   getEffectiveStatusColor,
   getEffectiveStatusLabel,
-  getAuctionName,
+  getAuctionDisplayTitle,
 } from "@/utils/auctionContracts";
 
 interface AuctionCardProps {
@@ -149,9 +149,9 @@ export const AuctionCard = ({
           </div>
           <div className="flex flex-col">
             <h3 className="text-lg font-display font-bold text-base-content uppercase tracking-wide">
-              {getAuctionName(auction.id) || `Auction #${auction.id.toString()}`}
+              {getAuctionDisplayTitle(auction)}
             </h3>
-            {getAuctionName(auction.id) && (
+            {auction.name && (
               <span className="text-xs text-base-content/50 font-mono">
                 #{auction.id.toString()}
               </span>
