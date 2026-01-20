@@ -39,7 +39,7 @@ export const AuctionList = ({
 
   const [auctions, setAuctions] = useState<AuctionData[]>([]);
   const [settlementResults, setSettlementResults] = useState<Record<string, SettlementResult>>({});
-  const [uiStatusFilter, setUiStatusFilter] = useState<string>("all");
+  const [uiStatusFilter, setUiStatusFilter] = useState<string>(String(AuctionStatus.Active));
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [selectedAuction, setSelectedAuction] = useState<AuctionData | null>(null);
 
