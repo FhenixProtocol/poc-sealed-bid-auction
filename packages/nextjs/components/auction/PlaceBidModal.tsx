@@ -41,8 +41,9 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
   const { isInitialized: isCofheInitialized } = useCofhe();
   const { hasValidPermit, generatePermit, isGeneratingPermit } = usePermit();
 
+  const ZERO_HASH = `0x${"0".repeat(64)}` as `0x${string}`;
   const [bidAmount, setBidAmount] = useState<string>("");
-  const [encryptedBalanceHash, setEncryptedBalanceHash] = useState<bigint>(BigInt(0));
+  const [encryptedBalanceHash, setEncryptedBalanceHash] = useState<`0x${string}`>(ZERO_HASH);
   const [unsealedBalance, setUnsealedBalance] = useState<bigint | null>(null);
   const [isLoadingBalance, setIsLoadingBalance] = useState(false);
   const [isUnsealing, setIsUnsealing] = useState(false);
@@ -178,7 +179,7 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
             ) : (
               <button
                 onClick={handleUnsealBalance}
-                disabled={!isCofheInitialized || isUnsealing || isGeneratingPermit || encryptedBalanceHash === BigInt(0)}
+                disabled={!isCofheInitialized || isUnsealing || isGeneratingPermit || /^0x0+$/.test(encryptedBalanceHash)}
                 className="btn btn-xs btn-accent gap-1"
               >
                 {isUnsealing || isGeneratingPermit ? (
@@ -186,7 +187,7 @@ export const PlaceBidModal = ({ auction, isOpen, onClose }: PlaceBidModalProps) 
                 ) : (
                   <Unlock className="w-3 h-3" />
                 )}
-                {encryptedBalanceHash === BigInt(0) ? "No Balance" : "View Balance"}
+                {/^0x0+$/.test(encryptedBalanceHash) ? "No Balance" : "View Balance"}
               </button>
             )}
           </div>

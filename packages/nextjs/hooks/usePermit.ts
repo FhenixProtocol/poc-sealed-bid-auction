@@ -1,45 +1,48 @@
 "use client";
 
-import { useState, useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
-import { cofhejs, permitStore } from "cofhejs/web";
+import { cofheClient } from "@/services/cofhe-client";
 import { useCofheStore } from "@/services/store/cofheStore";
 
-// Snapshot function to get permit status
-const getPermitSnapshot = () => {
-  const permitResult = cofhejs?.getPermit();
-  return !!(permitResult?.success && permitResult?.data);
-};
-
-// Server snapshot (always false)
-const getServerSnapshot = () => false;
-
+/**
+ * usePermit — manages the currently active self-signed permit for decrypting
+ * encrypted values in the UI. Reactivity is driven by `permitVersion` from the
+ * Zustand store (bumped on every create/remove) since the new @cofhe/sdk does
+ * not expose a subscribable permit store.
+ */
 export function usePermit() {
   const { address, chainId } = useAccount();
   const { isInitialized: isCofheInitialized } = useCofheStore();
+  const permitVersion = useCofheStore((s) => s.permitVersion);
+  const bumpPermitVersion = useCofheStore((s) => s.bumpPermitVersion);
 
   const [isGeneratingPermit, setIsGeneratingPermit] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use useSyncExternalStore to subscribe to permit changes
-  const hasValidPermit = useSyncExternalStore(
-    permitStore.store.subscribe,
-    () => (isCofheInitialized ? getPermitSnapshot() : false),
-    getServerSnapshot
-  );
-
-  // Check for valid permit (manual check)
-  const checkPermit = useCallback(() => {
-    if (!isCofheInitialized) {
+  const hasValidPermit = useMemo(() => {
+    if (!isCofheInitialized || !address || !chainId) return false;
+    try {
+      const active = cofheClient.permits.getActivePermit(chainId, address);
+      return !!active;
+    } catch {
       return false;
     }
-    return getPermitSnapshot();
-  }, [isCofheInitialized]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCofheInitialized, address, chainId, permitVersion]);
 
-  // Generate new permit
+  const checkPermit = useCallback(() => {
+    if (!isCofheInitialized || !address || !chainId) return false;
+    try {
+      return !!cofheClient.permits.getActivePermit(chainId, address);
+    } catch {
+      return false;
+    }
+  }, [isCofheInitialized, address, chainId]);
+
   const generatePermit = useCallback(async () => {
-    if (!isCofheInitialized || !address || isGeneratingPermit) {
-      return { success: false, error: "Not ready to generate permit" };
+    if (!isCofheInitialized || !address || !chainId || isGeneratingPermit) {
+      return { success: false as const, error: "Not ready to generate permit" };
     }
 
     try {
@@ -50,67 +53,51 @@ export function usePermit() {
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + 30);
 
-      const result = await cofhejs.createPermit({
-        type: "self",
-        name: permitName,
+      await cofheClient.permits.getOrCreateSelfPermit(chainId, address, {
         issuer: address,
+        name: permitName,
         expiration: Math.round(expirationDate.getTime() / 1000),
       });
 
-      if (result?.success) {
-        console.log("Permit created successfully");
-        setError(null);
-        return { success: true };
-      } else {
-        const errorMessage =
-          result?.error?.message || "Failed to create permit";
-        setError(errorMessage);
-        return { success: false, error: errorMessage };
-      }
+      bumpPermitVersion();
+      console.log("Permit created successfully");
+      return { success: true as const };
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Unknown error generating permit";
       setError(errorMessage);
-      return { success: false, error: errorMessage };
+      return { success: false as const, error: errorMessage };
     } finally {
       setIsGeneratingPermit(false);
     }
-  }, [isCofheInitialized, address, isGeneratingPermit]);
+  }, [
+    isCofheInitialized,
+    address,
+    chainId,
+    isGeneratingPermit,
+    bumpPermitVersion,
+  ]);
 
-  // Remove permit function
   const removePermit = useCallback(async () => {
     if (!isCofheInitialized || !chainId || !address) {
-      console.log("Cannot remove permit: missing required data");
       return false;
     }
 
     try {
-      // Get current active permit hash
-      const activePermitResult = cofhejs?.getPermit();
-      if (!activePermitResult?.success || !activePermitResult?.data) {
-        console.log("No active permit to remove");
+      const active = cofheClient.permits.getActivePermit(chainId, address);
+      if (!active) {
         return false;
       }
-
-      // Remove the permit from the store
-      const allPermits = permitStore.getPermits(chainId.toString(), address);
-      if (allPermits && Object.keys(allPermits).length > 0) {
-        const permitHash = Object.keys(allPermits)[0];
-        permitStore.removePermit(chainId.toString(), address, permitHash, true);
-      } else {
-        console.log("No permits found to remove");
-        return false;
-      }
-
+      cofheClient.permits.removePermit(active.hash, chainId, address);
+      bumpPermitVersion();
       setError(null);
-      console.log("Permit removed successfully");
       return true;
     } catch (err) {
       console.error("Error removing permit:", err);
       setError("Failed to remove permit");
       return false;
     }
-  }, [isCofheInitialized, chainId, address]);
+  }, [isCofheInitialized, chainId, address, bumpPermitVersion]);
 
   return {
     hasValidPermit,

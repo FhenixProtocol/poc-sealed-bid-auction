@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAccount } from "wagmi";
-import { cofhejs, FheTypes } from "cofhejs/web";
+import { FheTypes } from "@cofhe/sdk";
+import { cofheClient } from "@/services/cofhe-client";
 import {
   ArrowLeft,
   Clock,
@@ -101,7 +102,7 @@ function markWinnerModalSeen(auctionId: bigint, winner: string): void {
 /**
  * Detailed view of a single auction with actions
  */
-type SettlementStep = "request" | "waiting" | "finalize";
+type SettlementStep = "request" | "finalize";
 
 export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const { address } = useAccount();
@@ -112,7 +113,6 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     getSettlementResult,
     requestSettlement,
     finalizeSettlement,
-    isDecryptionReady,
     getBidderDeposit,
     claimRefund,
     cancelAuction,
@@ -129,7 +129,6 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
 
   // Settlement flow state
   const [settlementStep, setSettlementStep] = useState<SettlementStep>("request");
-  const [isPolling, setIsPolling] = useState(false);
 
   // Bid amount state for the current user
   const [userBidAmount, setUserBidAmount] = useState<bigint | null>(null);
@@ -173,14 +172,11 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
         setSettlementResult(result);
       }
 
-      // Check settlement step based on status
+      // With the new cofhe-sdk flow, decryption happens off-chain during finalize
+      // — no polling needed. Go straight to "finalize" when a settlement has
+      // already been requested.
       if (auctionData.status === AuctionStatus.SettlementRequested) {
-        const ready = await isDecryptionReady(auctionId);
-        if (ready) {
-          setSettlementStep("finalize");
-        } else {
-          setSettlementStep("waiting");
-        }
+        setSettlementStep("finalize");
       } else if (auctionData.status === AuctionStatus.Active) {
         setSettlementStep("request");
       }
@@ -189,34 +185,12 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
     } finally {
       setIsLoadingData(false);
     }
-  }, [auctionId, address, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult, isDecryptionReady]);
+  }, [auctionId, address, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult]);
 
   // Load data on mount and when dependencies change
   useEffect(() => {
     loadAuctionData();
   }, [loadAuctionData]);
-
-  // Poll for decryption readiness when in "waiting" step
-  useEffect(() => {
-    if (settlementStep !== "waiting") {
-      return;
-    }
-
-    setIsPolling(true);
-    const interval = setInterval(async () => {
-      const ready = await isDecryptionReady(auctionId);
-      if (ready) {
-        setSettlementStep("finalize");
-        setIsPolling(false);
-        clearInterval(interval);
-      }
-    }, 2000);
-
-    return () => {
-      clearInterval(interval);
-      setIsPolling(false);
-    };
-  }, [settlementStep, auctionId, isDecryptionReady]);
 
   // Timer for real-time status updates (every second when auction is active)
   useEffect(() => {
@@ -257,7 +231,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
   const handleRequestSettlement = async () => {
     const success = await requestSettlement(auctionId);
     if (success) {
-      setSettlementStep("waiting");
+      setSettlementStep("finalize");
       loadAuctionData();
     }
   };
@@ -318,24 +292,22 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
 
     setIsUnsealingBid(true);
     try {
-      // Get the encrypted bid hash from the contract
+      // Get the encrypted bid hash from the contract (bytes32 in the new FHERC20)
       const ctHash = await getBidderDeposit(auctionId, address);
 
-      if (!ctHash || ctHash === BigInt(0)) {
+      if (!ctHash || /^0x0+$/.test(ctHash)) {
         console.error("No bid deposit found");
         setIsUnsealingBid(false);
         return;
       }
 
-      // Unseal the bid amount using the user's permit
-      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
+      // Decrypt the bid amount using the user's active permit via @cofhe/sdk
+      const plaintext = await cofheClient
+        .decryptForView(ctHash, FheTypes.Uint64)
+        .execute();
 
-      if (result?.success && result?.data !== undefined) {
-        setUserBidAmount(BigInt(result.data.toString()));
-        setBidRevealed(true);
-      } else {
-        console.error("Failed to unseal bid amount");
-      }
+      setUserBidAmount(BigInt(plaintext.toString()));
+      setBidRevealed(true);
     } catch (error) {
       console.error("Error revealing bid:", error);
     } finally {
@@ -665,7 +637,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                   </button>
                 )}
 
-                {/* Settlement Flow */}
+                {/* Settlement Flow (2-step in the new cofhe-sdk: request → decrypt & finalize) */}
                 {showSettlementFlow && (
                   <div className="space-y-3">
                     {/* Step indicator */}
@@ -673,11 +645,8 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                       <span className={settlementStep === "request" ? "text-primary font-bold" : "text-success"}>
                         1. Request
                       </span>
-                      <span className={settlementStep === "waiting" ? "text-yellow-500 font-bold" : settlementStep === "finalize" ? "text-success" : "text-base-content/40"}>
-                        2. Decrypt
-                      </span>
                       <span className={settlementStep === "finalize" ? "text-primary font-bold" : "text-base-content/40"}>
-                        3. Finalize
+                        2. Decrypt & Finalize
                       </span>
                     </div>
 
@@ -697,15 +666,6 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                       </button>
                     )}
 
-                    {settlementStep === "waiting" && (
-                      <div className="flex flex-col items-center gap-2 py-3">
-                        <Loader2 className="w-6 h-6 animate-spin text-yellow-500" />
-                        <span className="text-sm text-yellow-500 font-display uppercase">
-                          Waiting for decryption...
-                        </span>
-                      </div>
-                    )}
-
                     {settlementStep === "finalize" && (
                       <button
                         onClick={handleFinalizeSettlement}
@@ -717,7 +677,7 @@ export const AuctionDetail = ({ auctionId, onBack }: AuctionDetailProps) => {
                         ) : (
                           <Trophy className="w-4 h-4" />
                         )}
-                        Finalize Settlement
+                        Decrypt & Finalize
                       </button>
                     )}
                   </div>

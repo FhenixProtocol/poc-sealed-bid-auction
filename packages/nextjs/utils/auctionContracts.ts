@@ -231,7 +231,13 @@ export const sealedBidAuctionAbi = [
     type: "function",
   },
   {
-    inputs: [{ name: "auctionId", type: "uint256" }],
+    inputs: [
+      { name: "auctionId", type: "uint256" },
+      { name: "winner", type: "address" },
+      { name: "amount", type: "uint64" },
+      { name: "winnerProof", type: "bytes" },
+      { name: "amountProof", type: "bytes" },
+    ],
     name: "finalizeSettlement",
     outputs: [],
     stateMutability: "nonpayable",
@@ -239,8 +245,11 @@ export const sealedBidAuctionAbi = [
   },
   {
     inputs: [{ name: "auctionId", type: "uint256" }],
-    name: "isDecryptionReady",
-    outputs: [{ name: "ready", type: "bool" }],
+    name: "getSettlementCtHashes",
+    outputs: [
+      { name: "bidderCt", type: "bytes32" },
+      { name: "amountCt", type: "bytes32" },
+    ],
     stateMutability: "view",
     type: "function",
   },
@@ -250,7 +259,7 @@ export const sealedBidAuctionAbi = [
       { name: "bidder", type: "address" },
     ],
     name: "getBidderDeposit",
-    outputs: [{ name: "deposit", type: "uint256" }],
+    outputs: [{ name: "deposit", type: "bytes32" }],
     stateMutability: "view",
     type: "function",
   },
@@ -297,7 +306,11 @@ export const sealedBidAuctionAbi = [
   },
   {
     anonymous: false,
-    inputs: [{ indexed: true, name: "auctionId", type: "uint256" }],
+    inputs: [
+      { indexed: true, name: "auctionId", type: "uint256" },
+      { indexed: false, name: "highestBidderCtHash", type: "bytes32" },
+      { indexed: false, name: "highestBidCtHash", type: "bytes32" },
+    ],
     name: "SettlementRequested",
     type: "event",
   },
@@ -520,7 +533,7 @@ export const auctionTokenAbi = [
   {
     inputs: [{ name: "account", type: "address" }],
     name: "confidentialBalanceOf",
-    outputs: [{ name: "", type: "uint256" }],
+    outputs: [{ name: "", type: "bytes32" }],
     stateMutability: "view",
     type: "function",
   },

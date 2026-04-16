@@ -3,7 +3,8 @@
 import { useState, useCallback } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { parseEventLogs } from "viem";
-import { cofhejs, Encryptable } from "cofhejs/web";
+import { Encryptable } from "@cofhe/sdk";
+import { cofheClient } from "@/services/cofhe-client";
 import toast from "react-hot-toast";
 import { useAuctionStore } from "@/services/store/auctionStore";
 import { toastTxSuccess } from "@/utils/explorerLink";
@@ -420,12 +421,13 @@ export function useAuction() {
           toastTxSuccess("Operator approval set!", setOperatorHash, "set-operator");
         }
 
-        // Encrypt the bid amount using cofhejs
+        // Encrypt the bid amount using the new @cofhe/sdk builder API
         toast.loading("Encrypting bid...", { id: "encrypt-bid" });
 
-        const encryptResult = await cofhejs.encrypt([Encryptable.uint64(amount)] as const);
+        const [encrypted] = await cofheClient
+          .encryptInputs([Encryptable.uint64(amount)])
+          .execute();
 
-        const encrypted = encryptResult.data?.[0];
         if (!encrypted) {
           toast.error("Failed to encrypt bid amount", { id: "encrypt-bid" });
           return null;
@@ -511,35 +513,12 @@ export function useAuction() {
   );
 
   /**
-   * Check if decryption is ready for finalization
-   */
-  const isDecryptionReady = useCallback(
-    async (auctionId: bigint): Promise<boolean> => {
-      if (!publicClient) {
-        console.error("Public client not available");
-        return false;
-      }
-
-      try {
-        const result = await publicClient.readContract({
-          address: AUCTION_CONTRACT_ADDRESS,
-          abi: sealedBidAuctionAbi,
-          functionName: "isDecryptionReady",
-          args: [auctionId],
-        });
-
-        return result as boolean;
-      } catch (error) {
-        console.error("Failed to check decryption status:", error);
-        return false;
-      }
-    },
-    [publicClient]
-  );
-
-  /**
-   * Finalize settlement after decryption is complete
-   * The contract retrieves decrypted winner/amount from the FHE system
+   * Finalize settlement — the new flow in @cofhe/sdk 0.4.0:
+   * 1. Read the captured ciphertext hashes from the contract
+   * 2. Decrypt each off-chain via the Threshold Network (no permit needed)
+   * 3. Submit the decrypted values + signatures to the contract; the contract
+   *    verifies with FHE.verifyDecryptResult and completes settlement.
+   * This replaces the previous on-chain FHE.decrypt + polling pattern.
    */
   const finalizeSettlement = useCallback(
     async (auctionId: bigint): Promise<boolean> => {
@@ -551,13 +530,38 @@ export function useAuction() {
       setIsLoading(true);
 
       try {
-        toast.loading("Finalizing settlement...", { id: "finalize-settlement" });
+        // 1. Fetch the ctHashes captured during requestSettlement
+        toast.loading("Loading settlement data...", { id: "finalize-settlement" });
+        const ctHashes = (await publicClient.readContract({
+          address: AUCTION_CONTRACT_ADDRESS,
+          abi: sealedBidAuctionAbi,
+          functionName: "getSettlementCtHashes",
+          args: [auctionId],
+        })) as [`0x${string}`, `0x${string}`];
 
+        const [bidderCt, amountCt] = ctHashes;
+
+        // 2. Decrypt both values off-chain (parallel) — no permit required
+        toast.loading("Decrypting winner & amount...", { id: "finalize-settlement" });
+        const [winnerResult, amountResult] = await Promise.all([
+          cofheClient.decryptForTx(bidderCt).withoutPermit().execute(),
+          cofheClient.decryptForTx(amountCt).withoutPermit().execute(),
+        ]);
+
+        // decryptedValue is always bigint — for eaddress we convert to a 20-byte hex string.
+        const winnerHex = winnerResult.decryptedValue.toString(16).padStart(40, "0");
+        const winner = `0x${winnerHex}` as `0x${string}`;
+        const amount = amountResult.decryptedValue;
+        const winnerProof = winnerResult.signature;
+        const amountProof = amountResult.signature;
+
+        // 3. Submit the proofs to finalize
+        toast.loading("Finalizing settlement...", { id: "finalize-settlement" });
         const hash = await walletClient.writeContract({
           address: AUCTION_CONTRACT_ADDRESS,
           abi: sealedBidAuctionAbi,
           functionName: "finalizeSettlement",
-          args: [auctionId],
+          args: [auctionId, winner, amount, winnerProof, amountProof],
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
@@ -656,11 +660,12 @@ export function useAuction() {
   );
 
   /**
-   * Get the encrypted bid deposit hash for a bidder
-   * The bidder can then unseal this using their permit
+   * Get the encrypted bid deposit hash for a bidder.
+   * Returns a bytes32 ciphertext hash (euint64 is bytes32 in the new FHERC20).
+   * The bidder can then decrypt this value using `decryptForView` with a permit.
    */
   const getBidderDeposit = useCallback(
-    async (auctionId: bigint, bidder: string): Promise<bigint | null> => {
+    async (auctionId: bigint, bidder: string): Promise<`0x${string}` | null> => {
       if (!publicClient) {
         console.error("Public client not available");
         return null;
@@ -674,7 +679,7 @@ export function useAuction() {
           args: [auctionId, bidder as `0x${string}`],
         });
 
-        return result as bigint;
+        return result as `0x${string}`;
       } catch (error) {
         console.error("Failed to get bidder deposit:", error);
         return null;
@@ -700,7 +705,6 @@ export function useAuction() {
     hasClaimedRefund,
     getSettlementResult,
     isNftApproved,
-    isDecryptionReady,
     getBidderDeposit,
 
     // Write functions
