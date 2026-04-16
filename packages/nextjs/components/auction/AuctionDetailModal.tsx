@@ -43,7 +43,7 @@ function formatDuration(startTime: bigint, endTime: bigint): string {
   return `${minutes}m`;
 }
 
-type SettlementStep = "request" | "waiting" | "finalize";
+type SettlementStep = "request" | "finalize";
 
 export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }: AuctionDetailModalProps) => {
   const { address } = useAccount();
@@ -56,7 +56,6 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
     finalizeSettlement,
     claimRefund,
     cancelAuction,
-    isDecryptionReady,
     isLoading,
   } = useAuction();
 
@@ -69,9 +68,8 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
   const [showBidModal, setShowBidModal] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
 
-  // Settlement flow state - like unshield: request -> waiting -> finalize
+  // Settlement flow state - in the new cofhe-sdk: request -> decrypt & finalize
   const [settlementStep, setSettlementStep] = useState<SettlementStep>("request");
-  const [isPolling, setIsPolling] = useState(false);
   const [settlementCompleted, setSettlementCompleted] = useState(false);
 
   const isSeller = address?.toLowerCase() === auction.seller.toLowerCase();
@@ -126,50 +124,23 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
         setSettlementCompleted(true);
       }
 
-      // Check existing settlement status
+      // With the new cofhe-sdk flow, decryption happens during finalize — no polling.
       if (freshStatusNum === AuctionStatus.SettlementRequested) {
-        const ready = await isDecryptionReady(auctionToUse.id);
-        if (ready) {
-          setSettlementStep("finalize");
-        } else {
-          setSettlementStep("waiting");
-        }
+        setSettlementStep("finalize");
       }
 
       setIsCheckingStatus(false);
     };
 
     fetchStatus();
-  }, [address, initialAuction.id, isOpen, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult, isDecryptionReady]);
-
-  // Poll for decryption readiness when in "waiting" step
-  useEffect(() => {
-    if (settlementStep !== "waiting" || !isOpen) {
-      return;
-    }
-
-    setIsPolling(true);
-    const interval = setInterval(async () => {
-      const ready = await isDecryptionReady(auction.id);
-      if (ready) {
-        setSettlementStep("finalize");
-        setIsPolling(false);
-        clearInterval(interval);
-      }
-    }, 2000); // Poll every 2 seconds
-
-    return () => {
-      clearInterval(interval);
-      setIsPolling(false);
-    };
-  }, [settlementStep, auction.id, isDecryptionReady, isOpen]);
+  }, [address, initialAuction.id, isOpen, getAuction, hasBidOnAuction, hasClaimedRefund, getSettlementResult]);
 
   const handleRequestSettlement = async () => {
     const success = await requestSettlement(auction.id);
     if (success) {
       // Refresh auction data to get the new status
       await refreshAuction();
-      setSettlementStep("waiting");
+      setSettlementStep("finalize");
     }
   };
 
@@ -213,16 +184,13 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
     switch (settlementStep) {
       case "request":
         return "Request Settlement";
-      case "waiting":
-        return "Waiting for Decryption...";
       case "finalize":
-        return "Finalize Settlement";
+        return "Decrypt & Finalize";
     }
   };
 
   const isSettlementButtonDisabled = () => {
     if (isLoading || settlementCompleted) return true;
-    if (settlementStep === "waiting") return true;
     return false;
   };
 
@@ -307,20 +275,11 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
                 Settlement Progress
               </label>
               <div className="relative flex items-center justify-between px-4">
-                {/* Connector Lines */}
+                {/* Connector Line */}
                 <div className="absolute top-4 left-[calc(25%)] right-[calc(25%)] h-0.5 bg-base-300">
                   <div
                     className={`absolute left-0 h-full transition-all duration-300 ${
-                      settlementStep !== "request" ? "w-1/2 bg-green-500" : "w-0"
-                    }`}
-                  />
-                  <div
-                    className={`absolute left-1/2 h-full transition-all duration-300 ${
-                      settlementStep === "finalize" || settlementCompleted
-                        ? "w-1/2 bg-green-500"
-                        : settlementStep === "waiting"
-                          ? "w-1/4 bg-yellow-500"
-                          : "w-0"
+                      settlementStep !== "request" || settlementCompleted ? "w-full bg-green-500" : "w-0"
                     }`}
                   />
                 </div>
@@ -345,35 +304,7 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
                   }`}>Request</span>
                 </div>
 
-                {/* Step 2 - Decrypt */}
-                <div className="flex flex-col items-center gap-2 z-10">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
-                      settlementStep === "waiting"
-                        ? "bg-yellow-500 text-white ring-4 ring-yellow-500/20"
-                        : settlementStep === "finalize" || settlementCompleted
-                          ? "bg-green-500 text-white"
-                          : "bg-base-300 text-base-content/40"
-                    }`}
-                  >
-                    {settlementStep === "waiting" ? (
-                      <Clock className="w-4 h-4 animate-pulse" />
-                    ) : settlementStep === "finalize" || settlementCompleted ? (
-                      <CheckCircle2 className="w-4 h-4" />
-                    ) : (
-                      <span className="text-xs font-bold">2</span>
-                    )}
-                  </div>
-                  <span className={`text-xs font-medium ${
-                    settlementStep === "waiting"
-                      ? "text-yellow-600"
-                      : settlementStep === "finalize" || settlementCompleted
-                        ? "text-green-600"
-                        : "text-base-content/60"
-                  }`}>Decrypt</span>
-                </div>
-
-                {/* Step 3 - Finalize */}
+                {/* Step 2 - Decrypt & Finalize (combined in the new flow) */}
                 <div className="flex flex-col items-center gap-2 z-10">
                   <div
                     className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
@@ -387,7 +318,7 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
                     {settlementCompleted ? (
                       <CheckCircle2 className="w-4 h-4" />
                     ) : (
-                      <span className="text-xs font-bold">3</span>
+                      <span className="text-xs font-bold">2</span>
                     )}
                   </div>
                   <span className={`text-xs font-medium ${
@@ -396,25 +327,15 @@ export const AuctionDetailModal = ({ auction: initialAuction, isOpen, onClose }:
                       : settlementStep === "finalize"
                         ? "text-primary"
                         : "text-base-content/60"
-                  }`}>Finalize</span>
+                  }`}>Decrypt & Finalize</span>
                 </div>
               </div>
-
-              {/* Waiting message */}
-              {settlementStep === "waiting" && (
-                <div className="flex items-center gap-2 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-sm">
-                  <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />
-                  <span className="text-xs text-yellow-500">
-                    Waiting for FHE decryption... This may take a few moments.
-                  </span>
-                </div>
-              )}
 
               {/* Ready to finalize */}
               {settlementStep === "finalize" && !settlementCompleted && (
                 <div className="p-2 bg-green-500/10 border border-green-500/30 rounded-sm">
                   <p className="text-xs text-green-500">
-                    Decryption complete! Click &quot;Finalize Settlement&quot; to transfer the NFT to the winner.
+                    Click &quot;Decrypt & Finalize&quot; — the winner and amount are decrypted off-chain and submitted on-chain in a single step.
                   </p>
                 </div>
               )}

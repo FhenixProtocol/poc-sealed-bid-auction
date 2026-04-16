@@ -8,7 +8,7 @@ import {
     InEuint64,
     ebool
 } from "@fhenixprotocol/cofhe-contracts/FHE.sol";
-import {FHERC20} from "fhenix-confidential-contracts/contracts/FHERC20.sol";
+import {FHERC20} from "fhenix-confidential-contracts/contracts/FHERC20/FHERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {
     IERC721Receiver
@@ -44,6 +44,9 @@ contract SealedBidAuction is IERC721Receiver {
         // Settlement results (after decryption)
         address decryptedWinner;
         uint64 decryptedAmount;
+        // Ciphertext hashes captured at settlement request time — used by frontend
+        bytes32 highestBidCtHash;
+        bytes32 highestBidderCtHash;
         // Tracking
         uint256 totalBids;
     }
@@ -89,7 +92,11 @@ contract SealedBidAuction is IERC721Receiver {
         uint256 timestamp
     );
 
-    event SettlementRequested(uint256 indexed auctionId);
+    event SettlementRequested(
+        uint256 indexed auctionId,
+        bytes32 highestBidderCtHash,
+        bytes32 highestBidCtHash
+    );
 
     event AuctionSettled(
         uint256 indexed auctionId,
@@ -107,7 +114,6 @@ contract SealedBidAuction is IERC721Receiver {
     error AuctionNotEnded();
     error AuctionAlreadySettled();
     error SettlementNotRequested();
-    error DecryptionNotReady();
     error NotSeller();
     error NotBidder();
     error IsWinner();
@@ -118,6 +124,7 @@ contract SealedBidAuction is IERC721Receiver {
     error AuctionNotSettled();
     error NameRequired();
     error NameTooLong();
+    error InvalidDecryptionProof();
 
     // ============ ERC721 Receiver ============
 
@@ -224,6 +231,8 @@ contract SealedBidAuction is IERC721Receiver {
         bidderDeposits[auctionId][msg.sender] = transferred;
         hasBid[auctionId][msg.sender] = true;
 
+        // Persist ACL for this contract so we can use `transferred` in future transactions
+        FHE.allowThis(transferred);
         // Grant the bidder ACL permission to view their own bid amount
         FHE.allow(transferred, msg.sender);
 
@@ -252,7 +261,9 @@ contract SealedBidAuction is IERC721Receiver {
 
     // ============ Settlement ============
 
-    /// @notice Request settlement - initiates async decryption
+    /// @notice Request settlement — marks the encrypted winner/amount for off-chain
+    /// decryption via the Threshold Network. Anyone can then call
+    /// {finalizeSettlement} with the decrypted values + proofs.
     /// @param auctionId The auction to settle
     function requestSettlement(uint256 auctionId) external {
         Auction storage auction = auctions[auctionId];
@@ -263,35 +274,43 @@ contract SealedBidAuction is IERC721Receiver {
 
         auction.status = Status.SettlementRequested;
 
-        // Request decryption of winner address and amount
-        // These are async operations on Fhenix
-        FHE.decrypt(auction.highestBidder);
-        FHE.decrypt(auction.highestBid);
+        // Mark encrypted values for public (client-side) decryption via Threshold Network.
+        FHE.allowPublic(auction.highestBidder);
+        FHE.allowPublic(auction.highestBid);
 
-        emit SettlementRequested(auctionId);
+        // Capture ctHashes so the frontend can feed them to `decryptForTx` even
+        // after refreshing the page between request and finalize.
+        bytes32 bidderCt = eaddress.unwrap(auction.highestBidder);
+        bytes32 amountCt = euint64.unwrap(auction.highestBid);
+        auction.highestBidderCtHash = bidderCt;
+        auction.highestBidCtHash = amountCt;
+
+        emit SettlementRequested(auctionId, bidderCt, amountCt);
     }
 
-    /// @notice Finalize settlement after decryption is complete
-    /// @dev Retrieves decrypted winner and amount from FHE system
+    /// @notice Finalize settlement with client-provided decrypted values + proofs
     /// @param auctionId The auction to finalize
-    function finalizeSettlement(uint256 auctionId) external {
+    /// @param winner The decrypted winner address
+    /// @param amount The decrypted winning bid amount
+    /// @param winnerProof Threshold Network signature over (highestBidderCtHash, winner)
+    /// @param amountProof Threshold Network signature over (highestBidCtHash, amount)
+    function finalizeSettlement(
+        uint256 auctionId,
+        address winner,
+        uint64 amount,
+        bytes calldata winnerProof,
+        bytes calldata amountProof
+    ) external {
         Auction storage auction = auctions[auctionId];
 
         if (auction.status != Status.SettlementRequested)
             revert SettlementNotRequested();
 
-        // Get decrypted winner address from FHE system
-        (address winner, bool winnerDecrypted) = FHE.getDecryptResultSafe(
-            auction.highestBidder
-        );
-
-        // Get decrypted amount from FHE system
-        (uint64 amount, bool amountDecrypted) = FHE.getDecryptResultSafe(
-            auction.highestBid
-        );
-
-        // Check if both decryptions are ready
-        if (!winnerDecrypted || !amountDecrypted) revert DecryptionNotReady();
+        // Verify the Threshold Network proofs — reverts on invalid proofs
+        if (!FHE.verifyDecryptResult(auction.highestBidder, winner, winnerProof))
+            revert InvalidDecryptionProof();
+        if (!FHE.verifyDecryptResult(auction.highestBid, amount, amountProof))
+            revert InvalidDecryptionProof();
 
         // Store decrypted values
         auction.decryptedWinner = winner;
@@ -432,22 +451,22 @@ contract SealedBidAuction is IERC721Receiver {
         return hasRefunded[auctionId][bidder];
     }
 
-    /// @notice Check if decryption is ready for finalization
-    /// @param auctionId The auction to check
-    /// @return ready True if both winner and amount have been decrypted
-    function isDecryptionReady(
+    /// @notice Get the ciphertext hashes captured when settlement was requested.
+    /// Frontend uses these to call `decryptForTx()` off-chain before finalizing.
+    /// @param auctionId The auction to query
+    /// @return bidderCt The ctHash of the encrypted winner address
+    /// @return amountCt The ctHash of the encrypted winning amount
+    function getSettlementCtHashes(
         uint256 auctionId
-    ) external view returns (bool ready) {
+    ) external view returns (bytes32 bidderCt, bytes32 amountCt) {
         Auction storage auction = auctions[auctionId];
-
-        if (auction.status != Status.SettlementRequested) return false;
-
-        (, bool winnerDecrypted) = FHE.getDecryptResultSafe(
-            auction.highestBidder
-        );
-        (, bool amountDecrypted) = FHE.getDecryptResultSafe(auction.highestBid);
-
-        return winnerDecrypted && amountDecrypted;
+        if (
+            auction.status != Status.SettlementRequested &&
+            auction.status != Status.Settled
+        ) {
+            revert SettlementNotRequested();
+        }
+        return (auction.highestBidderCtHash, auction.highestBidCtHash);
     }
 
     /// @notice Get the encrypted bid deposit for a bidder

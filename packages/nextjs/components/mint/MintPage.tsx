@@ -23,9 +23,10 @@ export const MintPage = () => {
   const { isInitialized: isCofheInitialized, isInitializing: isCofheInitializing } = useCofhe();
   const { hasValidPermit, isGeneratingPermit, generatePermit } = usePermit();
 
+  const ZERO_HASH = `0x${"0".repeat(64)}` as `0x${string}`;
   const [nftBalance, setNftBalance] = useState<bigint>(BigInt(0));
   const [encryptedTokenBalance, setEncryptedTokenBalance] = useState<bigint | null>(null);
-  const [encryptedBalanceHash, setEncryptedBalanceHash] = useState<bigint>(BigInt(0));
+  const [encryptedBalanceHash, setEncryptedBalanceHash] = useState<`0x${string}`>(ZERO_HASH);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isUnsealing, setIsUnsealing] = useState(false);
   const [isPermitModalOpen, setIsPermitModalOpen] = useState(false);
@@ -171,7 +172,7 @@ export const MintPage = () => {
                 </p>
                 <button
                   onClick={handleUnsealBalance}
-                  disabled={!isCofheInitialized || isUnsealing || isGeneratingPermit || encryptedBalanceHash === BigInt(0)}
+                  disabled={!isCofheInitialized || isUnsealing || isGeneratingPermit || /^0x0+$/.test(encryptedBalanceHash)}
                   className="btn btn-sm btn-accent gap-2 font-display uppercase tracking-wide"
                 >
                   {isUnsealing || isGeneratingPermit ? (

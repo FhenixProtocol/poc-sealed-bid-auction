@@ -5,6 +5,12 @@ interface CofheState {
   setIsInitialized: (isInitialized: boolean) => void;
   balanceUpdateTrigger: number;
   triggerBalanceUpdate: () => void;
+  /**
+   * Bumped whenever a permit is created, removed, or the active permit changes.
+   * Consumers use this as a reactive dependency to re-read from `cofheClient.permits.*`.
+   */
+  permitVersion: number;
+  bumpPermitVersion: () => void;
 }
 
 export const useCofheStore = create<CofheState>((set) => ({
@@ -15,4 +21,7 @@ export const useCofheStore = create<CofheState>((set) => ({
     set((state) => ({
       balanceUpdateTrigger: state.balanceUpdateTrigger + 1,
     })),
+  permitVersion: 0,
+  bumpPermitVersion: () =>
+    set((state) => ({ permitVersion: state.permitVersion + 1 })),
 }));

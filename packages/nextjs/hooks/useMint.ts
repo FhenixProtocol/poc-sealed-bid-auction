@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { cofhejs, FheTypes } from "cofhejs/web";
+import { FheTypes } from "@cofhe/sdk";
+import { cofheClient } from "@/services/cofhe-client";
 import toast from "react-hot-toast";
 import { auctionNftAbi, auctionTokenAbi } from "@/utils/auctionContracts";
 import { toastTxSuccess } from "@/utils/explorerLink";
@@ -62,11 +63,13 @@ export function useMint() {
   }, [publicClient, address]);
 
   /**
-   * Get user's encrypted/confidential token balance
-   * Returns the ctHash that needs to be unsealed with a permit
+   * Get user's encrypted/confidential token balance.
+   * `confidentialBalanceOf` now returns `bytes32` in the new FHERC20.
+   * Returns "0x0...0" when the user has no balance yet.
    */
-  const getEncryptedTokenBalanceHash = useCallback(async (): Promise<bigint> => {
-    if (!publicClient || !address) return BigInt(0);
+  const getEncryptedTokenBalanceHash = useCallback(async (): Promise<`0x${string}`> => {
+    const ZERO = `0x${"0".repeat(64)}` as `0x${string}`;
+    if (!publicClient || !address) return ZERO;
 
     try {
       const ctHash = await publicClient.readContract({
@@ -75,29 +78,27 @@ export function useMint() {
         functionName: "confidentialBalanceOf",
         args: [address],
       });
-      return ctHash as bigint;
+      return ctHash as `0x${string}`;
     } catch (error) {
       console.error("Failed to get encrypted token balance hash:", error);
-      return BigInt(0);
+      return ZERO;
     }
   }, [publicClient, address]);
 
   /**
-   * Unseal the encrypted token balance using cofhejs
-   * Requires a valid permit to be created first
+   * Decrypt the encrypted token balance using the new @cofhe/sdk.
+   * Requires a valid active permit (see usePermit hook).
    */
-  const unsealTokenBalance = useCallback(async (ctHash: bigint): Promise<bigint | null> => {
-    if (!ctHash || ctHash === BigInt(0)) return BigInt(0);
+  const unsealTokenBalance = useCallback(async (ctHash: `0x${string}`): Promise<bigint | null> => {
+    if (!ctHash || /^0x0+$/.test(ctHash)) return BigInt(0);
 
     try {
-      const result = await cofhejs.unseal(ctHash, FheTypes.Uint64);
-
-      if (result?.success && result?.data !== undefined) {
-        return BigInt(result.data.toString());
-      }
-      return null;
+      const plaintext = await cofheClient
+        .decryptForView(ctHash, FheTypes.Uint64)
+        .execute();
+      return BigInt(plaintext.toString());
     } catch (error) {
-      console.error("Failed to unseal token balance:", error);
+      console.error("Failed to decrypt token balance:", error);
       return null;
     }
   }, []);
