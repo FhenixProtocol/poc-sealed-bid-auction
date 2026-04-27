@@ -46,7 +46,12 @@ export function useCofhe() {
         // The new @cofhe/sdk replaces `cofhejs.initializeWithViem` with a 3-step
         // config → client → connect flow. Config + client are module-level
         // (see services/cofhe-client.ts); here we only call connect.
-        await cofheClient.connect(publicClient, walletClient);
+        // Cast around viem type-identity drift: @cofhe/sdk re-exports viem
+        // types from its own resolved viem instance, which on Vercel ends up
+        // physically distinct from the workspace's viem (different zod peer →
+        // separate .pnpm entry), so structurally-identical `Chain` types are
+        // not assignment-compatible.
+        await cofheClient.connect(publicClient as never, walletClient as never);
         console.log("CoFHE client connected successfully");
         setGlobalIsInitialized(true);
         setError(null);
